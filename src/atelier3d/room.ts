@@ -16,7 +16,7 @@ export interface Hotspot3D {
 /**
  * 3D 화실. 화실 화면(3인칭 시점)과 색칠 화면 배경(이젤 앞 시점)이 같은 함수로 방을 만든다 (R9).
  * 단위는 미터, 바닥은 y = 0, 창문이 있는 벽은 -z 쪽이다.
- * 방은 사방과 천장이 막혀 있어, 방 밖은 창문으로만 보인다.
+ * 방은 사방과 천장이 막혀 있어, 방 밖은 창문으로만 보인다. 캐릭터는 방 끝에서 끝까지 걸을 수 있다.
  */
 export interface AtelierRoom extends WalkArea {
   group: THREE.Group;
@@ -39,11 +39,13 @@ export interface AtelierRoom extends WalkArea {
   dispose(): void;
 }
 
-// 방 크기. 뒤쪽(-z)에 창문 벽이 있고, 앞쪽(+z)은 카메라가 물러설 자리다.
+// 방 크기. 뒤쪽(-z)에 창문 벽이, 앞쪽(+z)에 문이 있는 벽이 있다.
 const ROOM = { halfW: 4, back: -3, front: 6, height: 3.3 };
 const WINDOW = { x0: 0.25, x1: 3.6, y0: 0.72, y1: 2.98 };
 const EASEL = { x: -0.35, z: -1.55, turn: 0.24 };
 const BOARD_HEIGHT = 0.78;
+/** 앞벽에 있는 문의 가운데 x */
+const DOOR_X = 1.4;
 
 const WOOD = 0xd9a56c;
 const WOOD_DARK = 0xb9793f;
@@ -462,6 +464,24 @@ export function buildAtelierRoom(): AtelierRoom {
   pouf.scale.y = 0.36;
   ball(0.05, 0xe9bd3e, 2.95, 0.27, 0.35).scale.y = 0.4;
 
+  // ── 문 (앞벽) ──────────────────────────────────
+  const door = sub(DOOR_X, 0, front);
+  box(1.24, 2.26, 0.1, WOOD_DARK, 0, 1.13, -0.03, door);
+  box(1.0, 2.1, 0.08, WOOD, 0, 1.05, -0.07, door);
+  for (const [py, ph] of [[1.52, 0.9], [0.52, 0.72]]) box(0.74, ph, 0.03, WOOD_LIGHT, 0, py, -0.11, door);
+  ball(0.045, 0xf2c94c, -0.37, 1.02, -0.14, door);
+  cylinder(0.02, 0.02, 0.06, 0xf2c94c, -0.37, 1.02, -0.11, door).rotation.x = Math.PI / 2;
+  box(1.3, 0.014, 0.7, 0xc98f6a, 0, 0.008, -0.5, door).castShadow = false;
+  box(1.1, 0.016, 0.5, 0xe3b08a, 0, 0.01, -0.5, door).castShadow = false;
+  // 문 옆: 옷걸이와 작은 액자
+  const rack = sub(DOOR_X + 1.25, 0, front - 0.04);
+  box(0.7, 0.1, 0.04, WOOD, 0, 1.75, 0, rack);
+  for (const hx of [-0.24, 0, 0.24]) cylinder(0.018, 0.018, 0.1, WOOD_DARK, hx, 1.75, -0.06, rack).rotation.x = Math.PI / 2;
+  box(0.34, 0.62, 0.06, 0xf7b6c8, -0.24, 1.42, -0.08, rack); // 걸어 둔 앞치마
+  box(0.56, 0.72, 0.05, WOOD, DOOR_X - 1.35, 1.7, front - 0.03);
+  box(0.44, 0.6, 0.052, 0xcfe6a8, DOOR_X - 1.35, 1.7, front - 0.032);
+  ball(0.09, 0xf9c5d8, DOOR_X - 1.35, 1.72, front - 0.06).scale.z = 0.2;
+
   // ── 조명 ───────────────────────────────────────
   group.add(new THREE.HemisphereLight(0xfff6e8, 0xe9c9a4, 1.15));
   group.add(new THREE.AmbientLight(0xfff3e4, 0.5));
@@ -469,6 +489,9 @@ export function buildAtelierRoom(): AtelierRoom {
   const fill = new THREE.PointLight(0xffe7c8, 6, 0, 1.6);
   fill.position.set(0.3, height - 0.5, 0.8);
   group.add(fill);
+  const fillFront = new THREE.PointLight(0xffe7c8, 5, 0, 1.6);
+  fillFront.position.set(0.3, height - 0.5, 4.2);
+  group.add(fillFront);
   // 창밖에서 들어오는 햇빛
   const sun = new THREE.DirectionalLight(0xffe6bd, 2.4);
   sun.position.set(winX + 4.2, 7.2, back - 6.5);
@@ -487,7 +510,7 @@ export function buildAtelierRoom(): AtelierRoom {
 
   return {
     group,
-    bounds: { minX: -3.55, maxX: 3.45, minZ: -2.35, maxZ: 3.2 },
+    bounds: { minX: -3.55, maxX: 3.55, minZ: -2.35, maxZ: front - 0.45 },
     obstacles: [
       { x: EASEL.x, z: EASEL.z - 0.1, r: 0.85 },
       { x: stoolAt.x, z: stoolAt.z, r: 0.42 },
@@ -511,7 +534,8 @@ export function buildAtelierRoom(): AtelierRoom {
       minZ: back + 0.3,
       maxZ: front - 0.3,
     },
-    entry: { x: 1.4, z: 4.9 },
+    // 문 앞에서 출발해 방 가운데로 걸어 들어온다.
+    entry: { x: DOOR_X, z: front - 0.55 },
     spawn: { x: 1.3, z: 1.25 },
     stool: {
       approach: { x: stoolAt.x + 0.78, z: stoolAt.z + 0.3 },

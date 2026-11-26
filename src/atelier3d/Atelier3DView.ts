@@ -8,8 +8,6 @@ const WALK_SPEED = 2.6;
 /** 이만큼(픽셀) 넘게 끌면 누르기가 아니라 둘러보기로 본다. */
 const DRAG_THRESHOLD = 6;
 const CAMERA = {
-  minAzimuth: -1.0,
-  maxAzimuth: 1.0,
   minPolar: 0.95,
   maxPolar: 1.42,
   minDistance: 2.4,
@@ -28,7 +26,7 @@ export interface Atelier3DEvents {
 /**
  * 3D 화실 화면: 캐릭터를 뒤에서 따라가는 3인칭 시점.
  * - 바닥을 누르거나 WASD/방향키로 걷는다.
- * - 화면을 끌면 둘러보고, 휠로 가까이/멀리 본다.
+ * - 화면을 끌면 360도로 둘러보고, 휠로 가까이/멀리 본다. 카메라는 방 밖으로 나가지 않는다.
  * - 의자를 누르면 앉고, 앉아서 이젤을 누르면 색칠을 시작한다.
  */
 export class Atelier3DView {
@@ -208,7 +206,8 @@ export class Atelier3DView {
     d.moved = true;
     d.x = e.clientX;
     d.y = e.clientY;
-    this.azimuth = Math.min(CAMERA.maxAzimuth, Math.max(CAMERA.minAzimuth, this.azimuth - dx * 0.006));
+    // 좌우로는 제한 없이 한 바퀴 돌 수 있다.
+    this.azimuth -= dx * 0.006;
     this.polar = Math.min(CAMERA.maxPolar, Math.max(CAMERA.minPolar, this.polar - dy * 0.005));
   };
 
