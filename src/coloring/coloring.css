@@ -2,9 +2,14 @@
   position: fixed;
   inset: 0;
   overflow: hidden;
-  background: linear-gradient(180deg, #fff3e2 0%, #fde4d0 60%, #f6d2b8 100%);
   user-select: none;
   -webkit-user-select: none;
+}
+
+.coloring__backdrop {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, #fff3e2 0%, #fde4d0 60%, #f6d2b8 100%);
 }
 
 .coloring__canvas {
@@ -57,6 +62,82 @@
   cursor: pointer;
 }
 
+.zoom {
+  display: flex;
+  border-radius: 999px;
+  border: 2px solid #ecd9c2;
+  background: #fffaf2;
+  box-shadow: 0 3px 0 #e3c9aa;
+  overflow: hidden;
+  pointer-events: auto;
+}
+
+.zoom button {
+  min-width: 44px;
+  padding: 10px 12px;
+  border: 0;
+  background: none;
+  color: #5b4636;
+  font-family: inherit;
+  font-size: 18px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.zoom button:disabled {
+  color: #cdbba8;
+  cursor: default;
+}
+
+.zoom .zoom__value {
+  min-width: 68px;
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+}
+
+.coloring__hint {
+  position: absolute;
+  left: 50%;
+  bottom: 122px;
+  transform: translateX(-50%);
+  margin: 0;
+  padding: 8px 16px;
+  border-radius: 999px;
+  background: rgb(91 70 54 / 82%);
+  color: #fffaf2;
+  font-size: 15px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.brush {
+  position: absolute;
+  left: 0;
+  top: 0;
+  overflow: visible;
+  pointer-events: none;
+  filter: drop-shadow(0 4px 3px rgb(91 70 54 / 30%));
+}
+
+.brush__handle,
+.brush__bristle {
+  fill: transparent;
+  pointer-events: all;
+  touch-action: none;
+}
+
+.brush__handle {
+  cursor: grab;
+}
+
+.brush__handle:active {
+  cursor: grabbing;
+}
+
+.brush__bristle {
+  cursor: crosshair;
+}
+
 .pill--button:active {
   transform: translateY(2px);
   box-shadow: 0 1px 0 #e3c9aa;
@@ -95,8 +176,10 @@
   color: #4a382b;
   font-family: inherit;
   font-size: 24px;
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
   font-weight: 800;
-  cursor: pointer;
   transition: transform 0.12s ease;
 }
 

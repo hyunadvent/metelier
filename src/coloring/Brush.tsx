@@ -1,0 +1,192 @@
+import { useCallback, useEffect, useRef } from 'react';
+import type { PaletteEntry, Tool } from './painting';
+import type { ColoringView } from './view/ColoringView';
+
+/** 붓이 기울어진 각도. 붓끝이 왼쪽 아래, 손잡이가 오른쪽 위를 향한다. */
+const ANGLE = -35;
+const PAINTING_ANGLE = -29;
+const CLEAN_BRISTLE = '#ecd9b6';
+const EDGE = 8;
+
+type Mode = 'idle' | 'move' | 'paint';
+
+interface Pot {
+  tool: Tool;
+  x: number;
+  y: number;
+  r: number;
+}
+
+interface BrushProps {
+  view: ColoringView;
+  palette: PaletteEntry[];
+  /** 붓에 묻은 물감. null 이면 깨끗한 붓. */
+  tool: Tool | null;
+  /** 손잡이를 잡고 붓끝을 물감(또는 지우개)에 가져갔을 때. */
+  onDip(tool: Tool): void;
+  /** 물감이 묻지 않은 붓으로 칠하려 했을 때. */
+  onEmptyStroke(): void;
+}
+
+/**
+ * 화면 위에 놓인 붓.
+ * - 손잡이를 누르고 끌면 붓이 움직인다. 붓끝이 물감에 닿으면 그 색이 묻는다.
+ * - 붓털을 누르고 끌면 붓끝이 지나가는 자리가 칠해진다.
+ * 붓의 위치는 붓털이 종이에 닿는 점(붓끝에서 조금 안쪽)을 기준으로 한다.
+ */
+export function Brush({ view, palette, tool, onDip, onEmptyStroke }: BrushProps) {
+  const rootRef = useRef<SVGSVGElement>(null);
+  const bodyRef = useRef<SVGGElement>(null);
+  const pos = useRef({ x: 0, y: 0 });
+  const drag = useRef({ mode: 'idle' as Mode, pointerId: -1, dx: 0, dy: 0, stroking: false });
+  const pots = useRef<Pot[]>([]);
+  const insidePot = useRef<Tool | null>(null);
+
+  const moveTo = useCallback((x: number, y: number) => {
+    const nx = Math.min(window.innerWidth - EDGE, Math.max(EDGE, x));
+    const ny = Math.min(window.innerHeight - EDGE, Math.max(EDGE, y));
+    pos.current = { x: nx, y: ny };
+    if (rootRef.current) rootRef.current.style.transform = `translate(${nx}px, ${ny}px)`;
+  }, []);
+
+  useEffect(() => {
+    // 처음에는 그림 오른쪽 위에 놓아 둔다.
+    moveTo(window.innerWidth * 0.74, window.innerHeight * 0.3);
+    const onResize = () => moveTo(pos.current.x, pos.current.y);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [moveTo]);
+
+  const setAngle = (angle: number) => {
+    bodyRef.current?.setAttribute('transform', `rotate(${angle})`);
+  };
+
+  const readPots = () => {
+    pots.current = [...document.querySelectorAll<HTMLElement>('[data-pot]')].map((el) => {
+      const r = el.getBoundingClientRect();
+      const id = el.dataset.pot!;
+      return {
+        tool: id === 'eraser' ? 'eraser' : Number(id),
+        x: r.left + r.width / 2,
+        y: r.top + r.height / 2,
+        r: r.width / 2,
+      };
+    });
+  };
+
+  const checkDip = () => {
+    const { x, y } = pos.current;
+    const hit = pots.current.find((p) => Math.hypot(p.x - x, p.y - y) <= p.r);
+    const hitTool = hit ? hit.tool : null;
+    if (hitTool === insidePot.current) return;
+    insidePot.current = hitTool;
+    if (hitTool === null) return;
+    onDip(hitTool);
+    rootRef.current?.animate(
+      [{ translate: '0 0' }, { translate: '0 7px' }, { translate: '0 -3px' }, { translate: '0 0' }],
+      { duration: 320, easing: 'ease-out' },
+    );
+  };
+
+  const onPointerDown = (mode: 'move' | 'paint') => (e: React.PointerEvent<SVGElement>) => {
+    if (drag.current.mode !== 'idle' || (e.pointerType === 'mouse' && e.button !== 0)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      // 캡처가 안 되는 포인터여도 계속한다.
+    }
+    drag.current = {
+      mode,
+      pointerId: e.pointerId,
+      dx: pos.current.x - e.clientX,
+      dy: pos.current.y - e.clientY,
+      stroking: false,
+    };
+    if (mode === 'move') {
+      readPots();
+      insidePot.current = null;
+      return;
+    }
+    setAngle(PAINTING_ANGLE);
+    if (tool === null) {
+      onEmptyStroke();
+      return;
+    }
+    drag.current.stroking = view.beginStrokeAt(pos.current.x, pos.current.y);
+  };
+
+  const onPointerMove = (e: React.PointerEvent<SVGElement>) => {
+    const d = drag.current;
+    if (d.mode === 'idle' || e.pointerId !== d.pointerId) return;
+
+    if (d.mode === 'move') {
+      moveTo(e.clientX + d.dx, e.clientY + d.dy);
+      checkDip();
+      return;
+    }
+
+    // 빠르게 움직여도 끊기지 않도록 프레임 사이의 중간 좌표까지 모두 쓴다.
+    const coalesced = e.nativeEvent.getCoalescedEvents?.() ?? [];
+    const samples = coalesced.length ? coalesced : [e.nativeEvent];
+    for (const s of samples) {
+      moveTo(s.clientX + d.dx, s.clientY + d.dy);
+      if (tool === null) continue;
+      const { x, y } = pos.current;
+      // 칸 밖에서 누르기 시작했다면, 처음 들어간 칸에 고정된다.
+      if (d.stroking) view.strokeToClient(x, y);
+      else d.stroking = view.beginStrokeAt(x, y);
+    }
+    view.commitStroke();
+  };
+
+  const onPointerUp = (e: React.PointerEvent<SVGElement>) => {
+    const d = drag.current;
+    if (d.mode === 'idle' || e.pointerId !== d.pointerId) return;
+    if (d.mode === 'paint') {
+      view.endStroke();
+      setAngle(ANGLE);
+    }
+    drag.current = { mode: 'idle', pointerId: -1, dx: 0, dy: 0, stroking: false };
+  };
+
+  const bristle =
+    tool === null || tool === 'eraser'
+      ? CLEAN_BRISTLE
+      : (palette.find((p) => p.number === tool)?.color ?? CLEAN_BRISTLE);
+
+  const handlers = (mode: 'move' | 'paint') => ({
+    onPointerDown: onPointerDown(mode),
+    onPointerMove,
+    onPointerUp,
+    onPointerCancel: onPointerUp,
+  });
+
+  return (
+    <svg ref={rootRef} className="brush" width="1" height="1" aria-hidden="true">
+      <g ref={bodyRef} transform={`rotate(${ANGLE})`}>
+        {/* 손잡이 */}
+        <path d="M 70 -11 L 250 -5 Q 259 0 250 5 L 70 11 Z" fill="#b5713c" stroke="#7a4a25" strokeWidth="2" />
+        <path d="M 78 -6 L 240 -2" stroke="#d99a63" strokeWidth="3" strokeLinecap="round" />
+        {/* 쇠테 */}
+        <rect x="40" y="-13" width="32" height="26" rx="4" fill="#cfd4dc" stroke="#7d8590" strokeWidth="2" />
+        <path d="M 50 -12 V 12 M 62 -12 V 12" stroke="#9aa2ad" strokeWidth="1.5" />
+        {/* 붓털 */}
+        <path
+          d="M -14 0 C -6 -9, 14 -13, 42 -12 L 42 12 C 14 13, -6 9, -14 0 Z"
+          fill={bristle}
+          stroke="#5b4636"
+          strokeWidth="2"
+          strokeLinejoin="round"
+          strokeDasharray={tool === 'eraser' ? '5 4' : undefined}
+        />
+        <path d="M 2 -3 C 14 -6, 26 -7, 38 -7" stroke="rgb(255 255 255 / 45%)" strokeWidth="2.5" strokeLinecap="round" fill="none" />
+
+        {/* 잡는 영역: 손잡이(이동) 위에 붓털(칠하기)을 겹쳐 둔다 */}
+        <rect className="brush__handle" x="52" y="-26" width="212" height="52" rx="26" {...handlers('move')} />
+        <ellipse className="brush__bristle" cx="18" cy="0" rx="38" ry="30" {...handlers('paint')} />
+      </g>
+    </svg>
+  );
+}

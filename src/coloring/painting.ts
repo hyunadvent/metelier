@@ -1,6 +1,9 @@
 import type { Rgb } from './engine/PaintEngine';
 import { decodeRegionIds } from './engine/regionMap';
 
+/** 붓에 묻힐 수 있는 것: 물감 번호 또는 지우개. */
+export type Tool = number | 'eraser';
+
 export interface PaletteEntry {
   number: number;
   color: string;
