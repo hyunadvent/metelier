@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import type { AtelierLayout } from '../atelier/scene';
 import { Brush } from './Brush';
 import { CompleteDialog, ConfirmDialog, GalleryDialog } from './dialogs';
 import { hexToRgb, loadPainting, type LoadedPainting, type PaintingMeta, type Tool } from './painting';
@@ -15,7 +16,15 @@ const SAVE_DELAY_MS = 600;
 
 type DialogKind = 'complete' | 'gallery' | 'reset' | null;
 
-export function ColoringScreen({ paintingId }: { paintingId: string }) {
+interface ColoringScreenProps {
+  paintingId: string;
+  /** 주면 이 화실이 캔버스 뒤 배경으로 보인다. */
+  atelier?: AtelierLayout;
+  /** 주면 왼쪽 위에 화실로 돌아가는 버튼이 생긴다. */
+  onExit?(): void;
+}
+
+export function ColoringScreen({ paintingId, atelier, onExit }: ColoringScreenProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   const hostRef = useRef<HTMLDivElement>(null);
   const paletteRef = useRef<HTMLElement>(null);
@@ -54,7 +63,7 @@ export function ColoringScreen({ paintingId }: { paintingId: string }) {
           onZoom: setZoom,
           onHistory: (undo, redo) => setHistory({ undo, redo }),
           onChange: () => onChangeRef.current(),
-        });
+        }, { atelier });
         created = v;
         let completed = false;
         try {
@@ -81,7 +90,7 @@ export function ColoringScreen({ paintingId }: { paintingId: string }) {
       setView(null);
       setPainting(null);
     };
-  }, [paintingId]);
+  }, [paintingId, atelier]);
 
   // ── 자동 저장 ──────────────────────────────────────
   const saveNow = useCallback(() => {
@@ -224,6 +233,18 @@ export function ColoringScreen({ paintingId }: { paintingId: string }) {
       {meta && view && painting && (
         <>
           <header className="coloring__top">
+            {onExit && (
+              <button
+                className="icon-button"
+                aria-label="화실로 돌아가기"
+                onClick={() => {
+                  saveNow();
+                  onExit();
+                }}
+              >
+                🏠
+              </button>
+            )}
             <div className="pill" aria-label="칠한 칸 수">
               🎨 {progress.filled} / {progress.total}
             </div>

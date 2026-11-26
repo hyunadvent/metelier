@@ -1,4 +1,7 @@
-import { Application, Assets, Container, Graphics, Sprite, Text, Texture } from 'pixi.js';
+import { Application, Assets, BlurFilter, Container, Graphics, Sprite, Text, Texture } from 'pixi.js';
+import { createAtelierScene } from '../../atelier/AtelierScene';
+import { easelPlacement } from '../../atelier/geometry';
+import type { AtelierLayout } from '../../atelier/scene';
 import { PaintEngine, type Brush } from '../engine/PaintEngine';
 import type { LoadedPainting } from '../painting';
 import { clampPlacement, clampZoom, fitScale, scaleAround, type Placement, type Rect } from './viewport';
@@ -24,7 +27,15 @@ export interface ColoringViewEvents {
  * 캔버스 위의 포인터 입력은 확대·축소·이동에만 쓰고, 칠하기는 붓(Brush)이 호출한다.
  */
 export class ColoringView {
-  static async create(host: HTMLElement, painting: LoadedPainting, events: ColoringViewEvents): Promise<ColoringView> {
+  /**
+   * @param options.atelier 주면 화실 장면을 이젤 앞 시점으로 캔버스 뒤에 그린다 (R9).
+   */
+  static async create(
+    host: HTMLElement,
+    painting: LoadedPainting,
+    events: ColoringViewEvents,
+    options: { atelier?: AtelierLayout } = {},
+  ): Promise<ColoringView> {
     const app = new Application();
     await app.init({
       resizeTo: host,
@@ -34,11 +45,17 @@ export class ColoringView {
       resolution: Math.min(window.devicePixelRatio || 1, 2),
     });
     const linesTexture = await Assets.load<Texture>(painting.linesUrl);
-    return new ColoringView(app, host, painting, linesTexture, events);
+    const atelier = options.atelier
+      ? { layout: options.atelier, scene: await createAtelierScene(options.atelier) }
+      : null;
+    return new ColoringView(app, host, painting, linesTexture, events, atelier);
   }
 
   readonly engine: PaintEngine;
   private readonly world = new Container();
+  /** 배경 위에 얇게 덮어 캔버스와 HUD 가 잘 보이게 하는 막 */
+  private readonly veil = new Graphics();
+  private readonly easel = new Graphics();
   private readonly paintCanvas: HTMLCanvasElement;
   private readonly paintCtx: CanvasRenderingContext2D;
   private readonly paintImage: ImageData;
@@ -59,6 +76,7 @@ export class ColoringView {
     private readonly painting: LoadedPainting,
     linesTexture: Texture,
     private readonly events: ColoringViewEvents,
+    private readonly atelier: { layout: AtelierLayout; scene: Container } | null,
   ) {
     const { meta, regionIds, hidden } = painting;
     this.engine = new PaintEngine(meta.width, meta.height, regionIds, hidden);
@@ -93,6 +111,11 @@ export class ColoringView {
       label.position.set(region.label.x, region.label.y);
       this.labels.set(region.id, label);
       this.world.addChild(label);
+    }
+    if (atelier) {
+      // 화실은 캔버스 뒤 배경이므로 아주 살짝만 흐리게 해서 그림에 눈이 가게 한다.
+      atelier.scene.filters = [new BlurFilter({ strength: 1.2 })];
+      this.app.stage.addChild(atelier.scene, this.veil, this.easel);
     }
     this.app.stage.addChild(this.world);
 
@@ -268,12 +291,57 @@ export class ColoringView {
     this.layoutW = sw;
     this.layoutH = sh;
     this.fit = fitScale(this.avail(), width, height);
+    this.layoutBackdrop();
     const scale = this.fit * this.zoom;
     this.place(
       hadLayout
         ? { scale, x: sw / 2 - focusX * scale, y: sh / 2 - focusY * scale }
         : { scale, x: 0, y: 0 },
     );
+  }
+
+  /**
+   * 화실 배경과 이젤을 줌 100% 일 때의 종이 자리에 맞춘다.
+   * 확대·축소와 무관하게 고정되므로, 확대하면 캔버스만 커진다.
+   */
+  private layoutBackdrop(): void {
+    if (!this.atelier) return;
+    const { width: sw, height: sh } = this.app.screen;
+    const { width, height } = this.painting.meta;
+    const fitted = clampPlacement({ scale: this.fit, x: 0, y: 0 }, this.avail(), width, height);
+    const paper = { x: fitted.x, y: fitted.y, width: width * this.fit, height: height * this.fit };
+
+    const { layout, scene } = this.atelier;
+    const p = easelPlacement(layout.width, layout.height, layout.easelFocus, paper, sw, sh);
+    scene.scale.set(p.scale);
+    scene.position.set(p.x, p.y);
+    this.veil.clear().rect(0, 0, sw, sh).fill({ color: 0xfff3e2, alpha: 0.22 });
+
+    // 임시 이젤: 기둥, 위쪽 집게, 종이를 받치는 선반, 다리
+    const wood = 0xd9a56c;
+    const woodDark = 0xb9793f;
+    const edge = { width: 3, color: 0x8a5a2c };
+    const cx = paper.x + paper.width / 2;
+    const bottom = paper.y + paper.height;
+    const ledgeH = Math.max(14, Math.min(26, paper.height * 0.045));
+    this.easel
+      .clear()
+      .rect(cx - 17, paper.y - 46, 34, bottom - paper.y + 46)
+      .fill(woodDark)
+      .poly([paper.x + paper.width * 0.12, bottom, paper.x + paper.width * 0.2, bottom, paper.x + paper.width * 0.12, sh + 20, paper.x + paper.width * 0.02, sh + 20])
+      .fill(woodDark)
+      .stroke(edge)
+      .poly([paper.x + paper.width * 0.8, bottom, paper.x + paper.width * 0.88, bottom, paper.x + paper.width * 0.98, sh + 20, paper.x + paper.width * 0.88, sh + 20])
+      .fill(woodDark)
+      .stroke(edge)
+      .roundRect(cx - paper.width * 0.16, paper.y - 30, paper.width * 0.32, 32, 6)
+      .fill(wood)
+      .stroke(edge)
+      .roundRect(paper.x - 26, bottom - 3, paper.width + 52, ledgeH, 6)
+      .fill(wood)
+      .stroke(edge)
+      .rect(paper.x + 6, paper.y + 8, paper.width, paper.height)
+      .fill({ color: 0x5b4636, alpha: 0.18 });
   }
 
   private toWorld(clientX: number, clientY: number): { x: number; y: number } {
