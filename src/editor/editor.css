@@ -1,0 +1,194 @@
+.editor {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  height: 100%;
+  background: #f4efe8;
+  color: #3f332a;
+  font-size: 14px;
+}
+
+.editor__stage {
+  min-width: 0;
+  min-height: 0;
+  padding: 16px;
+  box-sizing: border-box;
+}
+
+.editor__scroll {
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+  border: 1px solid #d8cdbf;
+  border-radius: 8px;
+  background: #e9e2d8;
+}
+
+.editor__scroll canvas {
+  display: block;
+  cursor: crosshair;
+}
+
+.editor__drop {
+  display: grid;
+  place-content: center;
+  gap: 10px;
+  height: 100%;
+  border: 2px dashed #c9b9a4;
+  border-radius: 12px;
+  text-align: center;
+  cursor: pointer;
+}
+
+.editor__drop strong {
+  font-size: 18px;
+}
+
+.editor__drop input {
+  margin: 8px auto 0;
+}
+
+.editor__panel {
+  min-width: 0;
+  overflow: hidden auto;
+  padding: 16px;
+  border-left: 1px solid #d8cdbf;
+  background: #fffaf2;
+}
+
+.editor__panel h1 {
+  margin: 0 0 12px;
+  font-size: 18px;
+}
+
+.editor__panel h2 {
+  margin: 0 0 8px;
+  font-size: 14px;
+}
+
+.editor__panel section {
+  display: grid;
+  gap: 8px;
+  padding: 12px 0;
+  border-top: 1px solid #ecdfce;
+}
+
+.editor__panel button {
+  padding: 6px 10px;
+  border: 1px solid #c9b9a4;
+  border-radius: 6px;
+  background: #fff;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.editor__panel button:disabled {
+  color: #b5a898;
+  cursor: default;
+}
+
+.editor__panel button.is-active {
+  border-color: #b9792f;
+  background: #fbe3c0;
+}
+
+.editor__panel button.primary {
+  padding: 10px;
+  border-color: #b9792f;
+  background: #f6c98a;
+  font-weight: 700;
+}
+
+.field {
+  display: grid;
+  gap: 4px;
+}
+
+.field input {
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.field > span {
+  color: #6b5a4b;
+  font-size: 13px;
+}
+
+.field input[type='text'],
+.field input[type='number'] {
+  padding: 6px 8px;
+  border: 1px solid #c9b9a4;
+  border-radius: 6px;
+  font: inherit;
+}
+
+.field--inline {
+  grid-template-columns: auto 64px;
+  align-items: center;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.note {
+  margin: 0;
+  color: #7a6a5b;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.note--ok {
+  color: #2f7a43;
+}
+
+.note--error {
+  color: #b23b3b;
+}
+
+.swatches {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
+  gap: 4px;
+}
+
+.swatch {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  border: 2px solid transparent;
+  border-radius: 8px;
+}
+
+.swatch--active {
+  border-color: #b9792f;
+  background: #fbe3c0;
+}
+
+.swatch > button:first-child {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border-radius: 50%;
+  font-weight: 800;
+}
+
+.swatch input[type='color'] {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  background: none;
+}
+
+.swatch .swatch__remove {
+  padding: 0 6px;
+  border: 0;
+  background: none;
+  color: #a08a78;
+}

@@ -224,4 +224,16 @@ writeFileSync(join(OUT, 'lines.png'), encodePng(linesPng));
 writeFileSync(join(OUT, 'reference.png'), encodePng(referencePng));
 writeFileSync(join(OUT, 'meta.json'), JSON.stringify(meta, null, 2) + '\n');
 console.log(`wrote ${OUT}`);
+
+// 그림 제작 도구(/editor.html)를 시험해 볼 입력: 흰 바탕의 선화와 색칠된 완성 예시
+const SAMPLES = join(dirname(fileURLToPath(import.meta.url)), '..', 'docs', 'samples');
+const lineArtPng = new Uint8Array(W * H * 4);
+for (let i = 0; i < W * H; i++) {
+  const v = Math.round(255 * (1 - lineAlpha[i]));
+  lineArtPng.set([v, v, v, 255], i * 4);
+}
+mkdirSync(SAMPLES, { recursive: true });
+writeFileSync(join(SAMPLES, 'hill-house-lineart.png'), encodePng(lineArtPng));
+writeFileSync(join(SAMPLES, 'hill-house-colored.png'), encodePng(referencePng));
+console.log(`wrote ${SAMPLES}`);
 for (const r of meta.regions) console.log(`  ${r.id}\t${r.name}\t#${r.number}\t${r.pixels}px\tlabel ${r.label.x},${r.label.y} (${r.label.size})`);
