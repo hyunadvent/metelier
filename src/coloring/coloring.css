@@ -1,0 +1,129 @@
+.coloring {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: linear-gradient(180deg, #fff3e2 0%, #fde4d0 60%, #f6d2b8 100%);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.coloring__canvas {
+  position: absolute;
+  inset: 0;
+}
+
+.coloring__message {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  color: #7a5c45;
+  font-size: 18px;
+  pointer-events: none;
+}
+
+.coloring__top {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  right: 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  pointer-events: none;
+}
+
+.pill {
+  padding: 10px 18px;
+  border-radius: 999px;
+  border: 2px solid #ecd9c2;
+  background: #fffaf2;
+  color: #5b4636;
+  font-size: 18px;
+  font-weight: 700;
+  box-shadow: 0 3px 0 #e3c9aa;
+  pointer-events: auto;
+  white-space: nowrap;
+}
+
+.pill--title {
+  margin-right: auto;
+  font-weight: 600;
+}
+
+.pill--button {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.pill--button:active {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 #e3c9aa;
+}
+
+.palette {
+  position: absolute;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  max-width: calc(100% - 32px);
+  padding: 14px 22px;
+  border-radius: 999px;
+  border: 3px solid #d9a56c;
+  background: #fbe3c0;
+  box-shadow: 0 5px 0 #c98f55, 0 10px 24px rgb(122 82 45 / 25%);
+  overflow-x: auto;
+}
+
+.palette__divider {
+  flex: none;
+  width: 2px;
+  height: 44px;
+  background: #d9a56c;
+}
+
+.pot {
+  flex: none;
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  border: 3px solid rgb(91 70 54 / 25%);
+  color: #4a382b;
+  font-family: inherit;
+  font-size: 24px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: transform 0.12s ease;
+}
+
+.pot--eraser {
+  background: #fffaf2;
+}
+
+.pot--selected {
+  transform: scale(1.14);
+  border-color: #fffaf2;
+  box-shadow: 0 0 0 4px #f2c94c;
+}
+
+@media (max-width: 760px) {
+  .pot {
+    width: 46px;
+    height: 46px;
+    font-size: 19px;
+  }
+  .palette {
+    gap: 9px;
+    padding: 10px 14px;
+  }
+  .pill--title {
+    display: none;
+  }
+  .coloring__top {
+    justify-content: space-between;
+  }
+}

@@ -1,0 +1,216 @@
+{
+  "id": "hill-house",
+  "title": "언덕 위의 집",
+  "width": 2048,
+  "height": 1536,
+  "files": {
+    "regions": "regions.png",
+    "lines": "lines.png",
+    "reference": "reference.png"
+  },
+  "palette": [
+    {
+      "number": 1,
+      "color": "#FFF8E7"
+    },
+    {
+      "number": 2,
+      "color": "#F48FB1"
+    },
+    {
+      "number": 3,
+      "color": "#F9D65C"
+    },
+    {
+      "number": 4,
+      "color": "#7CB86A"
+    },
+    {
+      "number": 5,
+      "color": "#6FB7E9"
+    },
+    {
+      "number": 6,
+      "color": "#9B6B4A"
+    },
+    {
+      "number": 7,
+      "color": "#B388EB"
+    },
+    {
+      "number": 8,
+      "color": "#F4A24C"
+    },
+    {
+      "number": 9,
+      "color": "#5CC8B8"
+    }
+  ],
+  "regions": [
+    {
+      "id": 1,
+      "name": "하늘",
+      "number": 5,
+      "pixels": 1594062,
+      "label": {
+        "x": 1206,
+        "y": 292,
+        "size": 64
+      }
+    },
+    {
+      "id": 2,
+      "name": "해",
+      "number": 3,
+      "pixels": 70688,
+      "label": {
+        "x": 1649,
+        "y": 299,
+        "size": 64
+      }
+    },
+    {
+      "id": 3,
+      "name": "구름",
+      "number": 1,
+      "pixels": 77744,
+      "label": {
+        "x": 499,
+        "y": 331,
+        "size": 64
+      }
+    },
+    {
+      "id": 4,
+      "name": "먼 언덕",
+      "number": 4,
+      "pixels": 336388,
+      "label": {
+        "x": 163,
+        "y": 1372,
+        "size": 64
+      }
+    },
+    {
+      "id": 5,
+      "name": "가까운 언덕",
+      "number": 9,
+      "pixels": 651812,
+      "label": {
+        "x": 1794,
+        "y": 1294,
+        "size": 64
+      }
+    },
+    {
+      "id": 6,
+      "name": "집 벽",
+      "number": 7,
+      "pixels": 126400,
+      "label": {
+        "x": 849,
+        "y": 1029,
+        "size": 64
+      }
+    },
+    {
+      "id": 7,
+      "name": "지붕",
+      "number": 8,
+      "pixels": 78020,
+      "label": {
+        "x": 999,
+        "y": 647,
+        "size": 64
+      }
+    },
+    {
+      "id": 8,
+      "name": "문",
+      "number": 6,
+      "pixels": 26400,
+      "label": {
+        "x": 999,
+        "y": 959,
+        "size": 53
+      }
+    },
+    {
+      "id": 9,
+      "name": "왼쪽 창문",
+      "number": 5,
+      "pixels": 10000,
+      "label": {
+        "x": 849,
+        "y": 889,
+        "size": 44
+      }
+    },
+    {
+      "id": 10,
+      "name": "오른쪽 창문",
+      "number": 5,
+      "pixels": 10000,
+      "label": {
+        "x": 1149,
+        "y": 889,
+        "size": 44
+      }
+    },
+    {
+      "id": 11,
+      "name": "나무 기둥",
+      "number": 6,
+      "pixels": 12650,
+      "label": {
+        "x": 1569,
+        "y": 999,
+        "size": 26
+      }
+    },
+    {
+      "id": 12,
+      "name": "나뭇잎",
+      "number": 4,
+      "pixels": 90824,
+      "label": {
+        "x": 1569,
+        "y": 799,
+        "size": 64
+      }
+    },
+    {
+      "id": 13,
+      "name": "꽃 줄기",
+      "number": 4,
+      "pixels": 4266,
+      "label": {
+        "x": 349,
+        "y": 1253,
+        "size": 18
+      }
+    },
+    {
+      "id": 14,
+      "name": "꽃잎",
+      "number": 2,
+      "pixels": 49242,
+      "label": {
+        "x": 441,
+        "y": 1100,
+        "size": 46
+      }
+    },
+    {
+      "id": 15,
+      "name": "꽃 가운데",
+      "number": 3,
+      "pixels": 7232,
+      "label": {
+        "x": 349,
+        "y": 1129,
+        "size": 42
+      }
+    }
+  ]
+}
