@@ -1,0 +1,31 @@
+.atelier3d .atelier__canvas canvas {
+  cursor: grab;
+}
+
+.atelier3d__spots {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.atelier3d__spot {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 52px;
+  height: 52px;
+  padding: 0;
+  border-radius: 50%;
+  border: 3px solid #d9a56c;
+  background: rgb(255 250 242 / 94%);
+  box-shadow: 0 3px 8px rgb(91 70 54 / 25%);
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.atelier3d__spot--soon {
+  opacity: 0.65;
+}

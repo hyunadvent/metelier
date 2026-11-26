@@ -19,6 +19,8 @@ export interface ColoringViewEvents {
   onHistory(canUndo: boolean, canRedo: boolean): void;
   /** 칠이 바뀌었을 때 (스트로크 끝, 되돌리기, 처음부터). 자동 저장에 쓴다. */
   onChange(): void;
+  /** 줌 100% 일 때 종이가 놓이는 화면 위 자리가 정해졌을 때. 캔버스 뒤 배경을 맞추는 데 쓴다. */
+  onLayout?(paper: { x: number; y: number; width: number; height: number }, screenW: number, screenH: number): void;
 }
 
 /**
@@ -305,11 +307,12 @@ export class ColoringView {
    * 확대·축소와 무관하게 고정되므로, 확대하면 캔버스만 커진다.
    */
   private layoutBackdrop(): void {
-    if (!this.atelier) return;
     const { width: sw, height: sh } = this.app.screen;
     const { width, height } = this.painting.meta;
     const fitted = clampPlacement({ scale: this.fit, x: 0, y: 0 }, this.avail(), width, height);
     const paper = { x: fitted.x, y: fitted.y, width: width * this.fit, height: height * this.fit };
+    this.events.onLayout?.(paper, sw, sh);
+    if (!this.atelier) return;
 
     const { layout, scene } = this.atelier;
     const p = easelPlacement(layout.width, layout.height, layout.easelFocus, paper, sw, sh);

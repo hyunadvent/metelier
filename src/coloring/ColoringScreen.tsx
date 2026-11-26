@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AtelierLayout } from '../atelier/scene';
+import { EaselBackdrop, type ScreenRect } from '../atelier3d/EaselBackdrop';
 import { Brush } from './Brush';
 import { CompleteDialog, ConfirmDialog, GalleryDialog } from './dialogs';
 import { hexToRgb, loadPainting, type LoadedPainting, type PaintingMeta, type Tool } from './painting';
@@ -18,13 +19,18 @@ type DialogKind = 'complete' | 'gallery' | 'reset' | null;
 
 interface ColoringScreenProps {
   paintingId: string;
-  /** 주면 이 화실이 캔버스 뒤 배경으로 보인다. */
-  atelier?: AtelierLayout;
+  /** 캔버스 뒤에 보일 화실: 3D 화실, 또는 예전 2D 화실. 없으면 단색 배경. */
+  backdrop?: { kind: '3d' } | { kind: '2d'; layout: AtelierLayout };
   /** 주면 왼쪽 위에 화실로 돌아가는 버튼이 생긴다. */
   onExit?(): void;
 }
 
-export function ColoringScreen({ paintingId, atelier, onExit }: ColoringScreenProps) {
+export function ColoringScreen({ paintingId, backdrop, onExit }: ColoringScreenProps) {
+  const atelier = backdrop?.kind === '2d' ? backdrop.layout : undefined;
+  const use3d = backdrop?.kind === '3d';
+  const backdropHostRef = useRef<HTMLDivElement>(null);
+  const backdrop3dRef = useRef<EaselBackdrop | null>(null);
+  const paperRef = useRef<{ paper: ScreenRect; width: number; height: number } | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const hostRef = useRef<HTMLDivElement>(null);
   const paletteRef = useRef<HTMLElement>(null);
@@ -47,6 +53,25 @@ export function ColoringScreen({ paintingId, atelier, onExit }: ColoringScreenPr
   const [error, setError] = useState<string | null>(null);
   const meta: PaintingMeta | null = painting?.meta ?? null;
 
+  // ── 3D 화실 배경 (이젤 앞 시점) ────────────────────
+  useEffect(() => {
+    const host = backdropHostRef.current;
+    if (!use3d || !host) return;
+    let created: EaselBackdrop | null = null;
+    try {
+      created = new EaselBackdrop(host);
+      backdrop3dRef.current = created;
+      const last = paperRef.current;
+      if (last) created.place(last.paper, last.width, last.height);
+    } catch (e) {
+      console.warn('3D 화실 배경을 그릴 수 없습니다.', e);
+    }
+    return () => {
+      created?.destroy();
+      backdrop3dRef.current = null;
+    };
+  }, [use3d]);
+
   // ── 그림 불러오기, 이어 칠하기 ─────────────────────
   useEffect(() => {
     const host = hostRef.current;
@@ -63,6 +88,10 @@ export function ColoringScreen({ paintingId, atelier, onExit }: ColoringScreenPr
           onZoom: setZoom,
           onHistory: (undo, redo) => setHistory({ undo, redo }),
           onChange: () => onChangeRef.current(),
+          onLayout: (paper, width, height) => {
+            paperRef.current = { paper, width, height };
+            backdrop3dRef.current?.place(paper, width, height);
+          },
         }, { atelier });
         created = v;
         let completed = false;
@@ -223,8 +252,8 @@ export function ColoringScreen({ paintingId, atelier, onExit }: ColoringScreenPr
 
   return (
     <div className="coloring" ref={rootRef}>
-      {/* 화실 배경 자리. M5 에서 꾸민 화실 장면(이젤 앞 시점)으로 바뀐다. */}
-      <div className="coloring__backdrop" />
+      {/* 화실 배경 자리: 3D 화실이면 여기에 이젤 앞 시점이 그려진다. */}
+      <div className="coloring__backdrop" ref={backdropHostRef} />
       <div className="coloring__canvas" ref={hostRef} />
 
       {error && <p className="coloring__message">{error}</p>}
