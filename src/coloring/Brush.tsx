@@ -51,8 +51,16 @@ export function Brush({ view, palette, tool, onDip, onEmptyStroke }: BrushProps)
 
   useEffect(() => {
     // 처음에는 그림 오른쪽 위에 놓아 둔다.
-    moveTo(window.innerWidth * 0.74, window.innerHeight * 0.3);
-    const onResize = () => moveTo(pos.current.x, pos.current.y);
+    const place = () => moveTo(window.innerWidth * 0.74, window.innerHeight * 0.3);
+    let size = { w: window.innerWidth, h: window.innerHeight };
+    place();
+    // 창 크기가 바뀌면 화면에서의 상대 위치를 유지한다.
+    const onResize = () => {
+      const next = { w: window.innerWidth, h: window.innerHeight };
+      if (size.w < 50 || size.h < 50) place();
+      else moveTo((pos.current.x / size.w) * next.w, (pos.current.y / size.h) * next.h);
+      size = next;
+    };
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
   }, [moveTo]);

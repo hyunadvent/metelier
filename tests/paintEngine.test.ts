@@ -135,6 +135,63 @@ describe('PaintEngine', () => {
   });
 });
 
+describe('되돌리기와 불러오기', () => {
+  it('마지막 스트로크를 되돌리고 다시 할 수 있다', () => {
+    const engine = makeEngine();
+    paintAcross(engine, RED);
+    const afterRed = engine.pixels.slice();
+    const redCoverage = engine.coverage(1);
+    paintAcross(engine, BLUE, 6);
+    expect(engine.canUndo).toBe(true);
+
+    expect(engine.undo()).toBe(true);
+    expect(Array.from(engine.pixels)).toEqual(Array.from(afterRed));
+    expect(engine.coverage(1)).toBe(redCoverage);
+
+    expect(engine.undo()).toBe(true);
+    expect(engine.pixels.every((v) => v === 0)).toBe(true);
+    expect(engine.coverage(1)).toBe(0);
+    expect(engine.undo()).toBe(false);
+
+    expect(engine.redo()).toBe(true);
+    expect(Array.from(engine.pixels)).toEqual(Array.from(afterRed));
+    expect(engine.redo()).toBe(true);
+    expect(pixel(engine, 10, 10)).toEqual([...BLUE, 255]);
+    expect(engine.canRedo).toBe(false);
+  });
+
+  it('새로 칠하면 다시 하기 기록이 사라진다', () => {
+    const engine = makeEngine();
+    paintAcross(engine, RED);
+    engine.undo();
+    expect(engine.canRedo).toBe(true);
+    paintAcross(engine, BLUE);
+    expect(engine.canRedo).toBe(false);
+  });
+
+  it('되돌리면 바뀐 영역을 알려준다', () => {
+    const engine = makeEngine();
+    paintAcross(engine, RED);
+    engine.takeDirty();
+    engine.undo();
+    expect(engine.takeDirty()).not.toBeNull();
+  });
+
+  it('저장한 칠을 불러오면 진행도가 그대로 돌아온다', () => {
+    const engine = makeEngine();
+    paintAcross(engine, RED, 30);
+    const saved = engine.pixels.slice();
+
+    const restored = makeEngine();
+    restored.loadPixels(saved);
+    expect(restored.filledCount()).toBe(1);
+    expect(restored.coverage(1)).toBe(engine.coverage(1));
+    expect(restored.canUndo).toBe(false);
+    expect(restored.takeDirty()).toEqual({ x: 0, y: 0, width: W, height: H });
+    expect(() => restored.loadPixels(new Uint8ClampedArray(8))).toThrow();
+  });
+});
+
 describe('decodeRegionIds', () => {
   it('R | G << 8 로 ID 를 읽는다', () => {
     const rgba = new Uint8Array([0, 0, 0, 255, 7, 0, 0, 255, 44, 1, 0, 255]);

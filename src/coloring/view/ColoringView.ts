@@ -13,6 +13,9 @@ const DOUBLE_TAP_ZOOM = 2.5;
 export interface ColoringViewEvents {
   onProgress(filled: number, total: number): void;
   onZoom(zoom: number): void;
+  onHistory(canUndo: boolean, canRedo: boolean): void;
+  /** 칠이 바뀌었을 때 (스트로크 끝, 되돌리기, 처음부터). 자동 저장에 쓴다. */
+  onChange(): void;
 }
 
 /**
@@ -42,6 +45,8 @@ export class ColoringView {
   private readonly paintTexture: Texture;
   private readonly labels = new Map<number, Text>();
   private readonly pointers = new Map<number, { x: number; y: number }>();
+  private labelsVisible = true;
+  private linesBitmap: Promise<ImageBitmap> | null = null;
   private zoom = 1;
   private fit = 1;
   private lastFilled = -1;
@@ -133,11 +138,58 @@ export class ColoringView {
   endStroke(): void {
     this.engine.endStroke();
     this.flush();
+    this.notifyChange();
   }
 
   clear(): void {
     this.engine.clear();
     this.flush();
+    this.notifyChange();
+  }
+
+  undo(): void {
+    if (!this.engine.undo()) return;
+    this.flush();
+    this.notifyChange();
+  }
+
+  redo(): void {
+    if (!this.engine.redo()) return;
+    this.flush();
+    this.notifyChange();
+  }
+
+  /** 저장해 둔 칠을 불러온다. */
+  restore(pixels: Uint8ClampedArray): void {
+    this.engine.loadPixels(pixels);
+    this.flush();
+    this.events.onHistory(false, false);
+  }
+
+  setLabelsVisible(visible: boolean): void {
+    this.labelsVisible = visible;
+    this.updateLabels();
+  }
+
+  /** 종이 + 칠 + 선화를 합친 작품 이미지 (PNG). 갤러리와 완성 화면에 쓴다. */
+  async renderArtwork(maxWidth = 1280): Promise<Blob> {
+    const { width, height } = this.painting.meta;
+    const scale = Math.min(1, maxWidth / width);
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(width * scale);
+    canvas.height = Math.round(height * scale);
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('2D 캔버스를 만들 수 없습니다.');
+    ctx.fillStyle = '#fffdf8';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(this.paintCanvas, 0, 0, canvas.width, canvas.height);
+    this.linesBitmap ??= fetch(this.painting.linesUrl)
+      .then((r) => r.blob())
+      .then((b) => createImageBitmap(b));
+    ctx.drawImage(await this.linesBitmap, 0, 0, canvas.width, canvas.height);
+    return new Promise((resolve, reject) => {
+      canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error('작품 이미지를 만들지 못했습니다.'))), 'image/png');
+    });
   }
 
   // ── 확대·축소·이동 ───────────────────────────────────
@@ -285,8 +337,17 @@ export class ColoringView {
     this.reportProgress();
   }
 
+  private notifyChange(): void {
+    this.events.onHistory(this.engine.canUndo, this.engine.canRedo);
+    this.events.onChange();
+  }
+
+  private updateLabels(): void {
+    for (const [id, label] of this.labels) label.visible = this.labelsVisible && !this.engine.isFilled(id);
+  }
+
   private reportProgress(): void {
-    for (const [id, label] of this.labels) label.visible = !this.engine.isFilled(id);
+    this.updateLabels();
     const filled = this.engine.filledCount();
     if (filled === this.lastFilled) return;
     this.lastFilled = filled;

@@ -15,6 +15,16 @@ export const FILLED_RATIO = 0.95;
 /** 이 알파 이상인 픽셀을 칠해진 것으로 본다. */
 const COVERED_ALPHA = 128;
 
+/** 되돌릴 수 있는 스트로크 수와, 기록 전체가 담을 수 있는 픽셀 수의 상한. */
+const MAX_HISTORY_STROKES = 30;
+const MAX_HISTORY_PIXELS = 6_000_000;
+
+/** 한 스트로크가 바꾼 픽셀들과, 바뀌기 전(되돌린 뒤에는 바뀐 후)의 값. */
+interface StrokeRecord {
+  indices: Uint32Array;
+  values: Uint32Array;
+}
+
 /**
  * 칠 레이어를 CPU 버퍼로 관리하는 칠하기 엔진. DOM 과 무관하다.
  *
@@ -31,6 +41,15 @@ export class PaintEngine {
 
   private readonly covered: Uint8Array;
   private readonly coveredCount: Uint32Array;
+  /** pixels 를 픽셀당 32비트로 보는 뷰. 되돌리기 기록에 쓴다. */
+  private readonly pixels32: Uint32Array;
+  /** 현재 스트로크에서 이미 기록한 픽셀 표시. */
+  private readonly touched: Uint8Array;
+  private logIdx = new Uint32Array(4096);
+  private logVal = new Uint32Array(4096);
+  private logLen = 0;
+  private undoStack: StrokeRecord[] = [];
+  private redoStack: StrokeRecord[] = [];
   private brush: Brush | null = null;
   private radius = 16;
   private activeRegion = 0;
@@ -58,6 +77,8 @@ export class PaintEngine {
     this.coveredCount = new Uint32Array(maxId + 1);
     this.covered = new Uint8Array(width * height);
     this.pixels = new Uint8ClampedArray(width * height * 4);
+    this.pixels32 = new Uint32Array(this.pixels.buffer);
+    this.touched = new Uint8Array(width * height);
   }
 
   setBrush(brush: Brush | null): void {
@@ -79,7 +100,7 @@ export class PaintEngine {
 
   /** 스트로크를 시작하고 대상 칸 ID 를 돌려준다. 칠할 수 없으면 0. */
   beginStroke(x: number, y: number): number {
-    this.activeRegion = 0;
+    this.endStroke();
     if (!this.brush) return 0;
     const region = this.regionAt(x, y);
     if (region === 0) return 0;
@@ -97,8 +118,67 @@ export class PaintEngine {
     this.lastY = y;
   }
 
+  /** 스트로크를 끝내고, 바뀐 픽셀이 있으면 되돌리기 기록에 남긴다. */
   endStroke(): void {
     this.activeRegion = 0;
+    const len = this.logLen;
+    if (len === 0) return;
+    const indices = this.logIdx.slice(0, len);
+    const values = this.logVal.slice(0, len);
+    for (let k = 0; k < len; k++) this.touched[indices[k]] = 0;
+    this.logLen = 0;
+    this.undoStack.push({ indices, values });
+    this.redoStack.length = 0;
+
+    let total = 0;
+    for (const r of this.undoStack) total += r.indices.length;
+    while (this.undoStack.length > 1 && (this.undoStack.length > MAX_HISTORY_STROKES || total > MAX_HISTORY_PIXELS)) {
+      total -= this.undoStack.shift()!.indices.length;
+    }
+  }
+
+  get canUndo(): boolean {
+    return this.undoStack.length > 0;
+  }
+
+  get canRedo(): boolean {
+    return this.redoStack.length > 0;
+  }
+
+  /** 마지막 스트로크를 되돌린다. */
+  undo(): boolean {
+    if (this.isStroking) return false;
+    const record = this.undoStack.pop();
+    if (!record) return false;
+    this.swap(record);
+    this.redoStack.push(record);
+    return true;
+  }
+
+  /** 되돌린 스트로크를 다시 적용한다. */
+  redo(): boolean {
+    if (this.isStroking) return false;
+    const record = this.redoStack.pop();
+    if (!record) return false;
+    this.swap(record);
+    this.undoStack.push(record);
+    return true;
+  }
+
+  /** 저장해 둔 칠을 불러온다. 진행도를 다시 계산하고 되돌리기 기록은 비운다. */
+  loadPixels(rgba: Uint8ClampedArray | Uint8Array): void {
+    if (rgba.length !== this.pixels.length) {
+      throw new Error(`저장된 칠의 크기가 그림과 맞지 않습니다: ${rgba.length} != ${this.pixels.length}`);
+    }
+    this.pixels.set(rgba);
+    this.coveredCount.fill(0);
+    for (let i = 0; i < this.covered.length; i++) {
+      const now = this.pixels[i * 4 + 3] >= COVERED_ALPHA ? 1 : 0;
+      this.covered[i] = now;
+      if (now) this.coveredCount[this.regionIds[i]]++;
+    }
+    this.resetHistory();
+    this.markDirty(0, 0, this.width - 1, this.height - 1);
   }
 
   get isStroking(): boolean {
@@ -125,8 +205,44 @@ export class PaintEngine {
     this.pixels.fill(0);
     this.covered.fill(0);
     this.coveredCount.fill(0);
-    this.activeRegion = 0;
+    this.resetHistory();
     this.markDirty(0, 0, this.width - 1, this.height - 1);
+  }
+
+  private resetHistory(): void {
+    this.activeRegion = 0;
+    this.touched.fill(0);
+    this.logLen = 0;
+    this.undoStack = [];
+    this.redoStack = [];
+  }
+
+  /** 기록된 픽셀 값과 현재 값을 맞바꾼다. 같은 기록으로 되돌리기와 다시 하기를 모두 한다. */
+  private swap(record: StrokeRecord): void {
+    const { indices, values } = record;
+    const { width, pixels, pixels32, covered, coveredCount, regionIds } = this;
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (let k = 0; k < indices.length; k++) {
+      const i = indices[k];
+      const current = pixels32[i];
+      pixels32[i] = values[k];
+      values[k] = current;
+      const now = pixels[i * 4 + 3] >= COVERED_ALPHA ? 1 : 0;
+      if (now !== covered[i]) {
+        covered[i] = now;
+        coveredCount[regionIds[i]] += now ? 1 : -1;
+      }
+      const x = i % width;
+      const y = (i - x) / width;
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+    }
+    if (maxX >= minX) this.markDirty(minX, minY, maxX, maxY);
   }
 
   /** 마지막 호출 이후 바뀐 영역을 돌려주고 초기화한다. 바뀐 게 없으면 null. */
@@ -143,6 +259,15 @@ export class PaintEngine {
     return rect;
   }
 
+  private growLog(): void {
+    const idx = new Uint32Array(this.logIdx.length * 2);
+    const val = new Uint32Array(this.logVal.length * 2);
+    idx.set(this.logIdx);
+    val.set(this.logVal);
+    this.logIdx = idx;
+    this.logVal = val;
+  }
+
   private markDirty(x0: number, y0: number, x1: number, y1: number): void {
     if (x0 < this.dirtyMinX) this.dirtyMinX = x0;
     if (y0 < this.dirtyMinY) this.dirtyMinY = y0;
@@ -154,7 +279,7 @@ export class PaintEngine {
   private paintSegment(x0: number, y0: number, x1: number, y1: number): void {
     const brush = this.brush;
     if (!brush) return;
-    const { width, height, regionIds, pixels, covered, coveredCount } = this;
+    const { width, height, regionIds, pixels, pixels32, touched, covered, coveredCount } = this;
     const region = this.activeRegion;
     const reach = this.radius + 0.5;
     const reachSq = reach * reach;
@@ -194,6 +319,13 @@ export class PaintEngine {
         if (distSq >= reachSq) continue;
         // 붓 가장자리 1px 만 부드럽게, 안쪽은 완전 불투명.
         const a = Math.min(1, reach - Math.sqrt(distSq));
+
+        if (touched[i] === 0) {
+          touched[i] = 1;
+          if (this.logLen === this.logIdx.length) this.growLog();
+          this.logIdx[this.logLen] = i;
+          this.logVal[this.logLen++] = pixels32[i];
+        }
 
         const o = i * 4;
         if (erase) {
