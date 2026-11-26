@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { Character3D } from './Character3D';
-import { clampDestination, stepToward, type Ground } from './movement';
+import { clampDestination, distanceInsideBox, stepToward, type Ground } from './movement';
 import { buildAtelierRoom, type AtelierRoom, type Hotspot3D } from './room';
 
 /** 걷는 속도 (미터 / 초) */
@@ -8,12 +8,13 @@ const WALK_SPEED = 2.6;
 /** 이만큼(픽셀) 넘게 끌면 누르기가 아니라 둘러보기로 본다. */
 const DRAG_THRESHOLD = 6;
 const CAMERA = {
-  minAzimuth: -1.1,
-  maxAzimuth: 1.1,
-  minPolar: 0.7,
-  maxPolar: 1.38,
-  minDistance: 3.5,
-  maxDistance: 10,
+  minAzimuth: -1.0,
+  maxAzimuth: 1.0,
+  minPolar: 0.95,
+  maxPolar: 1.42,
+  minDistance: 2.4,
+  /** 가장 멀리서 본 거리. 이보다 멀어지지 않고, 벽이나 천장에 닿으면 더 가까워진다. */
+  maxDistance: 5.3,
 };
 
 export interface Atelier3DEvents {
@@ -47,9 +48,9 @@ export class Atelier3DView {
   private seated = false;
   private heading = Math.PI;
   private stuckTime = 0;
-  private azimuth = 0.3;
-  private polar = 1.16;
-  private distance = 7.8;
+  private azimuth = 0.22;
+  private polar = 1.2;
+  private distance = CAMERA.maxDistance;
   private drag: { id: number; x: number; y: number; moved: boolean } | null = null;
   private frame = 0;
   private lastTime = performance.now();
@@ -146,7 +147,7 @@ export class Atelier3DView {
   private sitDown(): void {
     this.target = null;
     this.seated = true;
-    this.heading = Math.PI; // 이젤(-z 쪽)을 바라본다
+    this.heading = this.room.stool.heading; // 이젤을 바라본다
     this.character.setPose('sit');
     this.events.onSeatedChange(true);
   }
@@ -272,11 +273,21 @@ export class Atelier3DView {
     const focusX = this.seated ? this.room.stool.seat.x : this.position.x;
     const focusZ = this.seated ? this.room.stool.seat.z : this.position.z;
     this.lookAt.lerp(new THREE.Vector3(focusX, feetY + 0.9, focusZ), blend);
-    const flat = this.distance * Math.sin(this.polar);
+    // 카메라는 항상 방 안에 둔다: 벽이나 천장에 닿으면 그만큼 캐릭터 쪽으로 당긴다.
+    const box = this.room.cameraBox;
+    this.lookAt.x = Math.min(box.maxX, Math.max(box.minX, this.lookAt.x));
+    this.lookAt.z = Math.min(box.maxZ, Math.max(box.minZ, this.lookAt.z));
+    const sinPolar = Math.sin(this.polar);
+    const direction = {
+      x: sinPolar * Math.sin(this.azimuth),
+      y: Math.cos(this.polar),
+      z: sinPolar * Math.cos(this.azimuth),
+    };
+    const distance = distanceInsideBox(this.lookAt, direction, box, this.distance);
     this.camera.position.set(
-      this.lookAt.x + flat * Math.sin(this.azimuth),
-      this.lookAt.y + this.distance * Math.cos(this.polar),
-      this.lookAt.z + flat * Math.cos(this.azimuth),
+      this.lookAt.x + direction.x * distance,
+      this.lookAt.y + direction.y * distance,
+      this.lookAt.z + direction.z * distance,
     );
     this.camera.lookAt(this.lookAt);
   }

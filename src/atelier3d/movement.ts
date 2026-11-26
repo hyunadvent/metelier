@@ -10,6 +10,40 @@ export interface WalkArea {
   obstacles: { x: number; z: number; r: number }[];
 }
 
+/** 축에 나란한 상자 */
+export interface Box3D {
+  minX: number;
+  maxX: number;
+  minY: number;
+  maxY: number;
+  minZ: number;
+  maxZ: number;
+}
+
+/**
+ * 상자 안의 점 origin 에서 direction 방향으로 상자를 벗어나지 않고 갈 수 있는 가장 먼 거리.
+ * 카메라가 벽이나 천장 밖으로 나가지 않도록 당길 때 쓴다. wanted 보다 멀리는 가지 않는다.
+ * @param direction 길이 1 의 방향
+ */
+export function distanceInsideBox(
+  origin: { x: number; y: number; z: number },
+  direction: { x: number; y: number; z: number },
+  box: Box3D,
+  wanted: number,
+): number {
+  let limit = wanted;
+  const axes = [
+    [origin.x, direction.x, box.minX, box.maxX],
+    [origin.y, direction.y, box.minY, box.maxY],
+    [origin.z, direction.z, box.minZ, box.maxZ],
+  ];
+  for (const [o, d, min, max] of axes) {
+    if (d > 1e-9) limit = Math.min(limit, (max - o) / d);
+    else if (d < -1e-9) limit = Math.min(limit, (min - o) / d);
+  }
+  return Math.max(0, limit);
+}
+
 /** 점이 가구 안에 있으면 가구 밖으로 밀어낸다. */
 export function pushOutOfObstacles(p: Ground, area: WalkArea, margin = 0): Ground {
   let { x, z } = p;
