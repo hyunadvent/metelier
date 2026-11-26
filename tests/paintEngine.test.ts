@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { FILLED_RATIO, PaintEngine, type Rgb } from '../src/coloring/engine/PaintEngine';
+import { PaintEngine, type Rgb } from '../src/coloring/engine/PaintEngine';
 import { decodeRegionIds } from '../src/coloring/engine/regionMap';
 
 const W = 40;
@@ -95,17 +95,81 @@ describe('PaintEngine', () => {
     expect(engine.coverage(1)).toBe(0);
   });
 
-  it('칸의 95% 이상이 칠해지면 칠한 칸으로 센다', () => {
+  it('칸을 모두 칠해야 칠한 칸으로 센다', () => {
     const engine = makeEngine();
     paintAcross(engine, RED, 3);
     expect(engine.isFilled(1)).toBe(false);
     expect(engine.filledCount()).toBe(0);
 
     paintAcross(engine, RED, 30);
-    expect(engine.coverage(1)).toBeGreaterThanOrEqual(FILLED_RATIO);
+    expect(engine.coverage(1)).toBe(1);
     expect(engine.isFilled(1)).toBe(true);
     expect(engine.filledCount()).toBe(1);
     expect(engine.regionCount).toBe(2);
+    expect(engine.fillableCount).toBe(2);
+  });
+
+  it('90% 넘게 칠해도 빈 곳이 남아 있으면 칠한 칸이 아니다', () => {
+    const engine = makeEngine();
+    // 칸 1 (19 x 20) 의 맨 아래 한 줄만 남기고 모두 칠한다: 95%
+    const saved = new Uint8ClampedArray(W * H * 4);
+    for (let y = 0; y < H - 1; y++) {
+      for (let x = 0; x < 19; x++) saved.set([...RED, 255], (y * W + x) * 4);
+    }
+    engine.loadPixels(saved);
+    expect(engine.coverage(1)).toBeCloseTo(0.95);
+    expect(engine.isFilled(1)).toBe(false);
+
+    // 이미 칠한 곳을 한 번 더 지나가도 빈 줄은 메워지지 않는다
+    paintAcross(engine, RED, 2);
+    expect(engine.isFilled(1)).toBe(false);
+    expect(pixel(engine, 5, H - 1)[3]).toBe(0);
+  });
+
+  it('한두 픽셀짜리 틈은 스트로크가 끝날 때 주변 색으로 메운다', () => {
+    const engine = makeEngine();
+    const saved = new Uint8ClampedArray(W * H * 4);
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < 19; x++) saved.set([...BLUE, 255], (y * W + x) * 4);
+    }
+    saved.fill(0, (19 * W + 0) * 4, (19 * W + 2) * 4); // 왼쪽 아래 두 픽셀을 비운다
+    engine.loadPixels(saved);
+    expect(engine.isFilled(1)).toBe(false);
+
+    paintAcross(engine, RED, 2);
+    expect(engine.isFilled(1)).toBe(true);
+    expect(pixel(engine, 0, 19)).toEqual([...BLUE, 255]);
+
+    // 메운 것도 스트로크와 함께 되돌려진다
+    engine.undo();
+    expect(engine.isFilled(1)).toBe(false);
+    expect(pixel(engine, 0, 19)[3]).toBe(0);
+  });
+
+  it('지우개로 지나간 뒤에는 틈을 메우지 않는다', () => {
+    const engine = makeEngine();
+    paintAcross(engine, RED, 30);
+    engine.setBrush({ kind: 'erase' });
+    engine.setRadius(0.5);
+    engine.beginStroke(3.5, 3.5);
+    engine.endStroke();
+    expect(engine.isFilled(1)).toBe(false);
+  });
+
+  it('선에 가려진 픽셀은 칠하지 않아도 된다', () => {
+    const ids = new Uint16Array(W * H).fill(1);
+    const hidden = new Uint8Array(W * H);
+    for (let y = 0; y < H; y++) for (let x = 30; x < W; x++) hidden[y * W + x] = 1;
+    const engine = new PaintEngine(W, H, ids, hidden);
+    expect(engine.regionSize[1]).toBe(30 * H);
+
+    engine.setBrush({ kind: 'paint', color: RED });
+    engine.setRadius(12);
+    engine.beginStroke(2, 10);
+    engine.strokeTo(26, 10); // x < 30 은 모두 덮지만 가려진 오른쪽 끝까지는 닿지 않는다
+    engine.endStroke();
+    expect(pixel(engine, W - 1, 0)[3]).toBe(0);
+    expect(engine.isFilled(1)).toBe(true);
   });
 
   it('바뀐 영역만 알려준다', () => {

@@ -30,6 +30,8 @@ export interface PaintingMeta {
 export interface LoadedPainting {
   meta: PaintingMeta;
   regionIds: Uint16Array;
+  /** 선에 가려져 보이지 않는 픽셀 (0 이 아니면 가려짐). */
+  hidden: Uint8Array;
   linesUrl: string;
   referenceUrl: string;
 }
@@ -39,16 +41,17 @@ export function hexToRgb(hex: string): Rgb {
   return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
 }
 
-async function loadRegionIds(url: string, width: number, height: number): Promise<Uint16Array> {
+/** 이미지 파일의 픽셀을 변형 없이 읽는다. */
+async function readPixels(url: string, width: number, height: number): Promise<Uint8ClampedArray> {
   const response = await fetch(url);
-  if (!response.ok) throw new Error(`칸 ID 맵을 불러오지 못했습니다: ${url}`);
-  // 색 보정이나 알파 곱셈이 들어가면 ID 가 달라지므로 둘 다 끈다.
+  if (!response.ok) throw new Error(`그림 파일을 불러오지 못했습니다: ${url}`);
+  // 색 보정이나 알파 곱셈이 들어가면 값이 달라지므로 둘 다 끈다.
   const bitmap = await createImageBitmap(await response.blob(), {
     colorSpaceConversion: 'none',
     premultiplyAlpha: 'none',
   });
   if (bitmap.width !== width || bitmap.height !== height) {
-    throw new Error(`칸 ID 맵 크기가 meta.json 과 다릅니다: ${bitmap.width} x ${bitmap.height}`);
+    throw new Error(`그림 파일 크기가 meta.json 과 다릅니다: ${url} (${bitmap.width} x ${bitmap.height})`);
   }
   const canvas = document.createElement('canvas');
   canvas.width = width;
@@ -58,7 +61,14 @@ async function loadRegionIds(url: string, width: number, height: number): Promis
   ctx.imageSmoothingEnabled = false;
   ctx.drawImage(bitmap, 0, 0);
   bitmap.close();
-  return decodeRegionIds(ctx.getImageData(0, 0, width, height).data);
+  return ctx.getImageData(0, 0, width, height).data;
+}
+
+/** 선화에서 선이 절반 이상 덮은 픽셀을 표시한다. 이런 픽셀은 보이지 않으므로 진행도에 세지 않는다. */
+function hiddenByLines(linesRgba: Uint8ClampedArray): Uint8Array {
+  const hidden = new Uint8Array(linesRgba.length / 4);
+  for (let i = 0; i < hidden.length; i++) hidden[i] = linesRgba[i * 4 + 3] >= 128 ? 1 : 0;
+  return hidden;
 }
 
 export async function loadPainting(id: string): Promise<LoadedPainting> {
@@ -66,10 +76,14 @@ export async function loadPainting(id: string): Promise<LoadedPainting> {
   const response = await fetch(`${baseUrl}meta.json`);
   if (!response.ok) throw new Error(`그림 정보를 불러오지 못했습니다: ${id}`);
   const meta = (await response.json()) as PaintingMeta;
-  const regionIds = await loadRegionIds(baseUrl + meta.files.regions, meta.width, meta.height);
+  const [regions, lines] = await Promise.all([
+    readPixels(baseUrl + meta.files.regions, meta.width, meta.height),
+    readPixels(baseUrl + meta.files.lines, meta.width, meta.height),
+  ]);
   return {
     meta,
-    regionIds,
+    regionIds: decodeRegionIds(regions),
+    hidden: hiddenByLines(lines),
     linesUrl: baseUrl + meta.files.lines,
     referenceUrl: baseUrl + meta.files.reference,
   };

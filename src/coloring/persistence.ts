@@ -24,7 +24,7 @@ export async function saveSession(view: ColoringView, meta: PaintingMeta, comple
     updatedAt,
   });
   // 완성 후 일부를 지운 상태로는 갤러리의 작품을 덮어쓰지 않는다.
-  if (completed && view.engine.filledCount() === view.engine.regionCount) {
+  if (completed && view.engine.filledCount() === view.engine.fillableCount) {
     await saveGalleryItem({ paintingId: meta.id, title: meta.title, image: await view.renderArtwork(), updatedAt });
   }
 }

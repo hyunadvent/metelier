@@ -60,8 +60,8 @@ export class ColoringView {
     linesTexture: Texture,
     private readonly events: ColoringViewEvents,
   ) {
-    const { meta, regionIds } = painting;
-    this.engine = new PaintEngine(meta.width, meta.height, regionIds);
+    const { meta, regionIds, hidden } = painting;
+    this.engine = new PaintEngine(meta.width, meta.height, regionIds, hidden);
 
     this.paintCanvas = document.createElement('canvas');
     this.paintCanvas.width = meta.width;
@@ -351,6 +351,6 @@ export class ColoringView {
     const filled = this.engine.filledCount();
     if (filled === this.lastFilled) return;
     this.lastFilled = filled;
-    this.events.onProgress(filled, this.engine.regionCount);
+    this.events.onProgress(filled, this.engine.fillableCount);
   }
 }
