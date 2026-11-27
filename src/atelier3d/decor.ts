@@ -13,9 +13,24 @@ export type BuiltinPicture = (typeof BUILTIN_PICTURES)[number];
 /** 액자에 거는 그림: 기본 그림, 또는 색칠 그림의 완성 예시 */
 export type PictureRef = { kind: 'builtin'; id: BuiltinPicture } | { kind: 'painting'; paintingId: string };
 
+/** 화분을 바꿀 수 있는 자리 */
+export const PLANT_SLOTS = ['window-stand'] as const;
+export type PlantSlot = (typeof PLANT_SLOTS)[number];
+
+/** 고를 수 있는 화분 */
+export const PLANT_KINDS = ['leafy', 'tulip', 'cactus'] as const;
+export type PlantKind = (typeof PLANT_KINDS)[number];
+
+export const PLANT_INFO: Record<PlantKind, { icon: string; label: string }> = {
+  leafy: { icon: '🌿', label: '초록 잎' },
+  tulip: { icon: '🌷', label: '튤립' },
+  cactus: { icon: '🌵', label: '선인장' },
+};
+
 export interface AtelierDecor {
   version: 1;
   pictures: Record<PictureSlot, PictureRef>;
+  plants: Record<PlantSlot, PlantKind>;
 }
 
 export const DEFAULT_DECOR: AtelierDecor = {
@@ -28,6 +43,7 @@ export const DEFAULT_DECOR: AtelierDecor = {
     'door-near': { kind: 'painting', paintingId: 'hill-house' },
     'door-far': { kind: 'builtin', id: 'lilac-flowers' },
   },
+  plants: { 'window-stand': 'leafy' },
 };
 
 const PAINTING_ID = /^[a-z0-9][a-z0-9-]{0,40}$/;
@@ -47,15 +63,23 @@ function parsePicture(raw: unknown): PictureRef | null {
 
 /** 저장된 값을 믿을 수 있는 꾸밈 데이터로 고친다. 빠졌거나 잘못된 자리는 기본값으로 채운다. */
 export function normalizeDecor(raw: unknown): AtelierDecor {
-  const saved = typeof raw === 'object' && raw !== null ? ((raw as { pictures?: unknown }).pictures ?? {}) : {};
+  const source = typeof raw === 'object' && raw !== null ? (raw as { pictures?: unknown; plants?: unknown }) : {};
+  const saved = source.pictures ?? {};
   const pictures = { ...DEFAULT_DECOR.pictures };
+  const plants = { ...DEFAULT_DECOR.plants };
+  if (typeof source.plants === 'object' && source.plants !== null) {
+    for (const slot of PLANT_SLOTS) {
+      const kind = (source.plants as Record<string, unknown>)[slot];
+      if ((PLANT_KINDS as readonly unknown[]).includes(kind)) plants[slot] = kind as PlantKind;
+    }
+  }
   if (typeof saved === 'object' && saved !== null) {
     for (const slot of PICTURE_SLOTS) {
       const picture = parsePicture((saved as Record<string, unknown>)[slot]);
       if (picture) pictures[slot] = picture;
     }
   }
-  return { version: 1, pictures };
+  return { version: 1, pictures, plants };
 }
 
 export function loadDecor(): AtelierDecor {

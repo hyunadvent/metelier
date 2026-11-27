@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { OutlineEffect } from 'three/addons/effects/OutlineEffect.js';
-import { DEFAULT_DECOR, type AtelierDecor, type PictureRef, type PictureSlot } from './decor';
+import { DEFAULT_DECOR, type AtelierDecor, type PictureRef, type PictureSlot, type PlantKind, type PlantSlot } from './decor';
 import type { Box3D, Ground, WalkArea } from './movement';
 import { curtainGeometry, lathe, roundedBox, smoothProfile } from './shapes';
 import {
@@ -18,7 +18,7 @@ import {
   woodFloorTexture,
 } from './textures';
 
-export type Hotspot3DId = 'easel' | 'stool' | 'window' | 'bookshelf';
+export type Hotspot3DId = 'easel' | 'stool' | 'window' | 'bookshelf' | 'plant';
 
 /** 캐릭터가 자리를 잡고 하는 활동: 그림 그리기, 차 마시기, 책 읽기 */
 export type Activity = 'paint' | 'tea' | 'read';
@@ -64,6 +64,8 @@ export interface AtelierRoom extends WalkArea {
   /** 캔버스 판의 가로세로 비율을 그림에 맞춘다. */
   setBoardAspect(aspect: number): void;
   hotspots: Hotspot3D[];
+  /** 그 자리의 화분을 다른 화분으로 바꾼다 (꾸미기). */
+  setPlant(slot: PlantSlot, kind: PlantKind): void;
   /** 움직이는 것(창밖 꽃잎, 등불의 흔들림)을 한 프레임만큼 진행한다. */
   update(dt: number): void;
   dispose(): void;
@@ -695,7 +697,81 @@ export function buildAtelierRoom(decor: AtelierDecor = DEFAULT_DECOR): AtelierRo
   const stand = addGroup(0.5, 0, back + 0.42, group);
   turned([[0, 0.78], [0.22, 0.78], [0.25, 0.8], [0.22, 0.82], [0, 0.82]], mat(WOOD), 0, 0, 0, stand);
   turned([[0.2, 0], [0.2, 0.025], [0.05, 0.06], [0.03, 0.4], [0.045, 0.74], [0.09, 0.78], [0, 0.78]], mat(WOOD_DARK), 0, 0, 0, stand);
-  plant(0, 0.82, 0, 0.62, stand, 14);
+  // 받침대 위의 화분: 꾸밈 데이터가 정한 화분을 놓고, 꾸미기로 바꿀 수 있다
+  const standPlant = addGroup(0, 0.82, 0, stand);
+  const potProfile = (s: number): [number, number][] => [
+    [0, 0],
+    [0.17 * s, 0],
+    [0.2 * s, 0.03 * s],
+    [0.25 * s, 0.34 * s],
+    [0.27 * s, 0.38 * s],
+    [0.24 * s, 0.4 * s],
+    [0.22 * s, 0.36 * s],
+    [0, 0.36 * s],
+  ];
+  const growPlant = (kind: PlantKind) => {
+    standPlant.clear();
+    const s = 0.62;
+    const soilY = 0.36 * s;
+    if (kind === 'leafy') {
+      plant(0, 0, 0, s, standPlant, 14);
+      return;
+    }
+    if (kind === 'tulip') {
+      // 분홍 화분에 튤립 다섯 송이
+      turned(potProfile(s), mat(0xf7c9b8, { roughness: 0.6 }), 0, 0, 0, standPlant);
+      cylinder(0.21 * s, 0.21 * s, 0.02 * s, 0x7a5a3f, 0, soilY - 0.006, 0, standPlant).castShadow = false;
+      const colors = [0xf48fb1, 0xf9d65c, 0xf2788f, 0xfbd3e1, 0xf4a24c];
+      colors.forEach((color, k) => {
+        const a = (k / colors.length) * Math.PI * 2;
+        const lean = k === 0 ? 0 : 0.22;
+        const off = k === 0 ? 0 : 0.05;
+        const tall = 0.52 + (k % 3) * 0.07;
+        const stemGroup = addGroup(Math.cos(a) * off, soilY, Math.sin(a) * off, standPlant);
+        stemGroup.rotation.set(Math.sin(a) * lean, 0, -Math.cos(a) * lean);
+        cylinder(0.008, 0.01, tall, 0x6aa85a, 0, tall / 2, 0, stemGroup);
+        // 꽃봉오리: 위가 살짝 오므라진 컵 모양
+        turned(
+          [[0, 0], [0.03, 0.006], [0.056, 0.05], [0.058, 0.095], [0.04, 0.135], [0.022, 0.15], [0, 0.15]],
+          mat(color, { roughness: 0.6 }),
+          0,
+          tall - 0.01,
+          0,
+          stemGroup,
+        );
+        // 길쭉한 잎
+        const leaf = ball(1, LEAF[k % LEAF.length], 0.03, tall * 0.36, 0, stemGroup);
+        leaf.scale.set(0.035, tall * 0.34, 0.012);
+        leaf.rotation.set(0, a, -0.28);
+      });
+      return;
+    }
+    // 하늘색 화분에 둥근 선인장
+    turned(potProfile(s), mat(0xa9cdee, { roughness: 0.6 }), 0, 0, 0, standPlant);
+    cylinder(0.21 * s, 0.21 * s, 0.02 * s, 0xd9c9a8, 0, soilY - 0.006, 0, standPlant).castShadow = false;
+    const body = ball(1, 0x6fae62, 0, soilY + 0.2, 0, standPlant);
+    body.scale.set(0.15, 0.23, 0.15);
+    for (let k = 0; k < 8; k++) {
+      // 세로 골과 가시
+      const a = (k / 8) * Math.PI * 2;
+      const rib = ball(1, 0x5b9a50, Math.cos(a) * 0.118, soilY + 0.2, Math.sin(a) * 0.118, standPlant);
+      rib.scale.set(0.04, 0.205, 0.04);
+      for (let j = 0; j < 4; j++) {
+        const r = 0.15 - Math.abs(j - 1.5) * 0.012;
+        ball(0.011, 0xfffaf2, Math.cos(a) * r, soilY + 0.08 + j * 0.08, Math.sin(a) * r, standPlant).castShadow = false;
+      }
+    }
+    const arm = ball(1, 0x6fae62, 0.17, soilY + 0.18, 0.02, standPlant);
+    arm.scale.set(0.07, 0.1, 0.07);
+    // 꼭대기의 분홍 꽃
+    for (let k = 0; k < 6; k++) {
+      const a = (k / 6) * Math.PI * 2;
+      const petal = ball(0.035, 0xf48fb1, Math.cos(a) * 0.04, soilY + 0.44, Math.sin(a) * 0.04, standPlant);
+      petal.scale.y = 0.55;
+    }
+    ball(0.024, 0xf9d65c, 0, soilY + 0.455, 0, standPlant);
+  };
+  growPlant(decor.plants['window-stand']);
   contact(0.5, back + 0.42, 0.7, 0.7);
 
   // ── 창가 찻상 ──────────────────────────────────
@@ -898,8 +974,12 @@ export function buildAtelierRoom(decor: AtelierDecor = DEFAULT_DECOR): AtelierRo
       { id: 'easel', label: '이젤', icon: '🎨', position: new THREE.Vector3(EASEL.x, 2.12, EASEL.z), available: true },
       { id: 'stool', label: '의자', icon: '🪑', position: new THREE.Vector3(stoolAt.x, 0.9, stoolAt.z), available: true },
       { id: 'window', label: '창가에서 차 마시기', icon: '☕', position: new THREE.Vector3(2.15, 0.95, back + 0.72), available: true },
+      { id: 'plant', label: '화분 바꾸기', icon: '🌱', position: new THREE.Vector3(0.5, 1.9, back + 0.42), available: true },
       { id: 'bookshelf', label: '책 읽기', icon: '📖', position: new THREE.Vector3(halfW - 0.55, 1.75, -1.65), available: true },
     ],
+    setPlant(slot: PlantSlot, kind: PlantKind) {
+      if (slot === 'window-stand') growPlant(kind);
+    },
     update(dt: number) {
       time += dt;
       // 꽃잎이 흔들리며 떨어지고, 땅에 닿으면 위에서 다시 내려온다

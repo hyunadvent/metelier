@@ -27,9 +27,20 @@ describe('화실 꾸밈 데이터', () => {
     expect('ceiling' in decor.pictures).toBe(false);
   });
 
+  it('화분은 고를 수 있는 종류만 받아들인다', () => {
+    expect(normalizeDecor(null).plants['window-stand']).toBe('leafy');
+    expect(normalizeDecor({ plants: { 'window-stand': 'cactus' } }).plants['window-stand']).toBe('cactus');
+    expect(normalizeDecor({ plants: { 'window-stand': '야자수' } }).plants['window-stand']).toBe('leafy');
+    expect(normalizeDecor({ plants: { 'window-stand': 'tulip', balcony: 'cactus' } }).plants).toEqual({ 'window-stand': 'tulip' });
+    // 화분만 바꿔 저장해도 액자는 그대로다
+    expect(normalizeDecor({ plants: { 'window-stand': 'tulip' } }).pictures).toEqual(DEFAULT_DECOR.pictures);
+  });
+
   it('기본 꾸밈을 고쳐도 원본은 바뀌지 않는다', () => {
     const decor = normalizeDecor(null);
     decor.pictures['back-large'] = { kind: 'builtin', id: 'hills' };
+    decor.plants['window-stand'] = 'cactus';
     expect(DEFAULT_DECOR.pictures['back-large']).toEqual({ kind: 'builtin', id: 'meadow' });
+    expect(DEFAULT_DECOR.plants['window-stand']).toBe('leafy');
   });
 });

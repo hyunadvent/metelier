@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type { OutlineEffect } from 'three/addons/effects/OutlineEffect.js';
 import { Character3D, type Pose3D } from './Character3D';
-import { loadDecor } from './decor';
+import { loadDecor, type PlantKind, type PlantSlot } from './decor';
 import { approachCamera, clampDestination, distanceInsideBox, stepToward, type CameraPose, type Ground } from './movement';
 import { buildAtelierRoom, configureRenderer, createOutline, type Activity, type AtelierRoom, type Hotspot3D, type Hotspot3DId } from './room';
 
@@ -41,6 +41,8 @@ export interface Atelier3DEvents {
   onActivityChange(activity: Activity | null): void;
   /** 의자에 앉은 채로 이젤을 눌렀을 때 */
   onEasel(): void;
+  /** 바꿀 수 있는 화분을 눌렀을 때 */
+  onPlantSpot(slot: PlantSlot): void;
   /** 아직 준비 중인 활동을 눌렀을 때 */
   onUnavailable(hotspot: Hotspot3D): void;
 }
@@ -143,6 +145,11 @@ export class Atelier3DView {
     this.frame = requestAnimationFrame(this.onFrame);
   }
 
+  /** 꾸미기: 그 자리의 화분을 바꾼다. */
+  setPlant(slot: PlantSlot, kind: PlantKind): void {
+    this.room.setPlant(slot, kind);
+  }
+
   destroy(): void {
     cancelAnimationFrame(this.frame);
     this.resizeObserver.disconnect();
@@ -221,6 +228,9 @@ export class Atelier3DView {
         break;
       case 'window':
         this.goSit('tea');
+        break;
+      case 'plant':
+        this.events.onPlantSpot('window-stand');
         break;
       case 'bookshelf':
         if (this.activity === 'read') break;
