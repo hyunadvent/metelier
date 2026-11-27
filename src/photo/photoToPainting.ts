@@ -2,6 +2,7 @@
 // 모든 계산은 브라우저 안에서 하며, 사진을 어디에도 보내지 않는다.
 import type { PaletteEntry } from '../coloring/painting';
 import { describeRegions, type RegionInfo, type Segmentation } from '../editor/segment';
+import { closeHoles, dilate, fillHolesWithSkin, flattenSkin, inkLines, skinMask, upscaleMap } from './faceLines';
 import { absorb, bilateral, components, modeFilter, quantize, toLab, upscaleLabels } from './imageOps';
 
 export interface PhotoOptions {
@@ -15,6 +16,11 @@ export interface PhotoOptions {
   workSize: number;
   /** 다듬는 세기 (0~3). 클수록 자잘한 무늬가 사라지고 면이 평평해진다. */
   smoothing: number;
+  /**
+   * 사람의 눈·코·입을 칸으로 나누지 않고 선으로 남긴다.
+   * 살색인 곳 안의 작은 무늬는 얼굴 칸에 합치고, 그 자리에 어두운 선을 그려 표정이 보이게 한다.
+   */
+  faceLines: boolean;
 }
 
 export const DEFAULT_PHOTO_OPTIONS: PhotoOptions = {
@@ -23,6 +29,7 @@ export const DEFAULT_PHOTO_OPTIONS: PhotoOptions = {
   outputSize: 2048,
   workSize: 1024,
   smoothing: 2,
+  faceLines: true,
 };
 
 export interface PhotoPainting {
@@ -138,6 +145,23 @@ export async function photoToPainting(
   let labels = modeFilter(rough, width, height, 2, k);
   labels = modeFilter(labels, width, height, 2, k);
 
+  // 2-1. 얼굴: 눈·코·입을 칸이 아니라 선으로 남긴다
+  let ink: Float32Array | null = null;
+  if (options.faceLines) {
+    // 얼굴 안의 무늬 크기에 맞춘 값. 사진의 긴 변에 비례한다.
+    const reach = Math.max(4, Math.round(Math.max(width, height) / 130));
+    const skin = skinMask(smoothed);
+    const closed = closeHoles(skin, width, height, reach);
+    // 살색 안에 뚫린 작은 구멍(눈, 입, 콧구멍)을 얼굴과 같은 색 묶음으로 메운다
+    fillHolesWithSkin(labels, skin, closed, width, height);
+    // 얼굴과 팔을 한 가지 살색 면으로 만든다 (명암으로 쪼개진 칸을 없앤다)
+    flattenSkin(labels, closed, width, height, k);
+    // 그 자리에 원본의 어두운 가는 무늬를 선으로 남긴다. 살색 부근에서만 그린다.
+    const area = dilate(closed, width, height, 2);
+    ink = inkLines(rgba, width, height, reach);
+    for (let i = 0; i < ink.length; i++) if (!area[i]) ink[i] = 0;
+  }
+
   // 3. 결과 크기로 늘린 뒤 칸을 정리한다
   await onStage?.('regions');
   const out = fitSize(width, height, options.outputSize);
@@ -185,7 +209,16 @@ export async function photoToPainting(
 
   // 4. 선화와 번호
   await onStage?.('lines');
-  const darkness = drawLines(comp.ids, out.width, out.height, Math.max(1.5, out.width / 700));
+  const darkness = drawLines(comp.ids, out.width, out.height, Math.max(1.5, out.width / 850));
+  if (ink) {
+    // 얼굴의 선을 결과 크기로 늘려 선화에 더한다. 흐릿한 가장자리는 잘라 내 또렷한 선으로 만든다.
+    const big = upscaleMap(ink, width, height, out.width, out.height);
+    for (let i = 0; i < darkness.length; i++) {
+      const t = Math.min(1, Math.max(0, (big[i] - 0.42) / 0.3));
+      const line = Math.round(t * t * (3 - 2 * t) * 255);
+      if (line > darkness[i]) darkness[i] = line;
+    }
+  }
   const seg: Segmentation = { ids: Uint16Array.from(comp.ids), count: comp.count };
   const regions = describeRegions(seg, out.width, out.height, darkness, 128);
 

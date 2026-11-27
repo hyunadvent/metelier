@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { absorb, bilateral, components, modeFilter, quantize, seededRandom, toLab, upscaleLabels } from '../src/photo/imageOps';
+import { closeHoles, inkLines, skinMask } from '../src/photo/faceLines';
 import { fitSize, photoToPainting } from '../src/photo/photoToPainting';
 
 const W = 120;
@@ -96,7 +97,7 @@ describe('이미지 연산', () => {
 });
 
 describe('사진을 색칠 그림으로', () => {
-  const options = { colors: 3, maxRegions: 50, outputSize: 240, workSize: 120, smoothing: 2 };
+  const options = { colors: 3, maxRegions: 50, outputSize: 240, workSize: 120, smoothing: 2, faceLines: false };
 
   it('면마다 칸이 되고, 칸의 번호는 원본 색을 가리킨다', async () => {
     const painting = await photoToPainting(testPhoto(), W, H, options);
@@ -163,5 +164,78 @@ describe('사진을 색칠 그림으로', () => {
   it('긴 변을 기준으로 크기를 맞춘다', () => {
     expect(fitSize(4000, 3000, 2048)).toEqual({ width: 2048, height: 1536 });
     expect(fitSize(600, 900, 1024)).toEqual({ width: 683, height: 1024 });
+  });
+});
+
+describe('얼굴의 눈·코·입을 선으로 남기기', () => {
+  const FW = 200;
+  const FH = 160;
+  const SKIN = [226, 176, 148];
+  const WALL = [206, 208, 212];
+  const DARK = [52, 40, 36];
+
+  /** 회색 벽 앞의 살색 얼굴(원)에 감은 눈 두 개와 입을 어두운 가는 선으로 그린다. 오른쪽에는 살색이 아닌 파란 원이 있다. */
+  function facePhoto(): Uint8ClampedArray {
+    const rgba = new Uint8ClampedArray(FW * FH * 4);
+    for (let y = 0; y < FH; y++) {
+      for (let x = 0; x < FW; x++) {
+        let color = WALL;
+        if (Math.hypot(x - 70, y - 80) < 46) color = SKIN;
+        if (Math.hypot(x - 160, y - 80) < 26) color = [70, 110, 200];
+        const eye = (y >= 68 && y < 71 && ((x >= 46 && x < 60) || (x >= 80 && x < 94))) || (y >= 100 && y < 103 && x >= 56 && x < 84);
+        // 파란 원 안에도 같은 모양의 어두운 선을 둔다 (살색이 아니므로 선으로 남지 않아야 한다)
+        const mark = y >= 79 && y < 82 && x >= 150 && x < 170;
+        if (eye || mark) color = DARK;
+        rgba.set([...color, 255], (y * FW + x) * 4);
+      }
+    }
+    return rgba;
+  }
+
+  it('살색인 곳을 찾고, 그 안의 작은 구멍을 메운다', () => {
+    const skin = skinMask(facePhoto());
+    expect(skin[80 * FW + 70]).toBe(1); // 볼
+    expect(skin[69 * FW + 50]).toBe(0); // 눈
+    expect(skin[10 * FW + 10]).toBe(0); // 벽
+    expect(skin[80 * FW + 160]).toBe(0); // 파란 원
+    const closed = closeHoles(skin, FW, FH, 4);
+    expect(closed[69 * FW + 50]).toBe(1); // 눈이 얼굴에 포함된다
+    expect(closed[10 * FW + 10]).toBe(0);
+  });
+
+  it('주변보다 어두운 가는 무늬만 선으로 뽑는다', () => {
+    const ink = inkLines(facePhoto(), FW, FH, 4);
+    expect(ink[69 * FW + 52]).toBeGreaterThan(0.8); // 눈
+    expect(ink[101 * FW + 70]).toBeGreaterThan(0.8); // 입
+    expect(ink[85 * FW + 70]).toBe(0); // 볼 한가운데
+    expect(ink[10 * FW + 10]).toBe(0); // 벽
+  });
+
+  it('눈과 입은 칸이 되지 않고 얼굴 칸 위의 선으로 남는다', async () => {
+    const options = { colors: 4, maxRegions: 50, outputSize: 400, workSize: 200, smoothing: 1, faceLines: true };
+    const painting = await photoToPainting(facePhoto(), FW, FH, options);
+    const at = (x: number, y: number) => y * 2 * painting.width + x * 2; // 결과는 원본의 두 배 크기
+    const face = painting.seg.ids[at(70, 85)];
+    // 눈과 입 자리가 얼굴과 같은 칸이다
+    expect(painting.seg.ids[at(52, 69)]).toBe(face);
+    expect(painting.seg.ids[at(87, 69)]).toBe(face);
+    expect(painting.seg.ids[at(70, 101)]).toBe(face);
+    // 그 자리에 선이 그려져 있고, 볼에는 없다
+    expect(painting.darkness[at(52, 69)]).toBeGreaterThan(200);
+    expect(painting.darkness[at(87, 69)]).toBeGreaterThan(200);
+    expect(painting.darkness[at(70, 101)]).toBeGreaterThan(200);
+    expect(painting.darkness[at(70, 85)]).toBe(0);
+    // 얼굴, 벽, 파란 원과 그 안의 표시: 얼굴의 눈·입은 칸 수에 들지 않는다
+    expect(painting.regions.length).toBeLessThanOrEqual(4);
+  });
+
+  it('옵션을 끄면 눈과 입 자리에 선을 따로 그리지 않는다', async () => {
+    const options = { colors: 4, maxRegions: 50, outputSize: 400, workSize: 200, smoothing: 1, faceLines: false };
+    const off = await photoToPainting(facePhoto(), FW, FH, options);
+    const on = await photoToPainting(facePhoto(), FW, FH, { ...options, faceLines: true });
+    const inked = (d: Uint8Array) => d.reduce((n, v) => n + (v > 128 ? 1 : 0), 0);
+    // 켰을 때는 눈과 입의 선이 온전히 남는다. 껐을 때 그 자리는 얼굴에 합쳐져 사라지거나 칸의 테두리만 남는다.
+    expect(on.darkness[(69 * 2) * on.width + 52 * 2]).toBeGreaterThan(200);
+    expect(inked(on.darkness)).not.toBe(inked(off.darkness));
   });
 });

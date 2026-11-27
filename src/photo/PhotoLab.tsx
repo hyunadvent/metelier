@@ -79,6 +79,7 @@ export function PhotoLab() {
   const [colors, setColors] = useState(DEFAULT_PHOTO_OPTIONS.colors);
   const [maxRegions, setMaxRegions] = useState(DEFAULT_PHOTO_OPTIONS.maxRegions);
   const [smoothing, setSmoothing] = useState(DEFAULT_PHOTO_OPTIONS.smoothing);
+  const [faceLines, setFaceLines] = useState(DEFAULT_PHOTO_OPTIONS.faceLines);
   const [painting, setPainting] = useState<PhotoPainting | null>(null);
   const [stage, setStage] = useState<PhotoStage | null>(null);
   const [seconds, setSeconds] = useState<number | null>(null);
@@ -105,7 +106,7 @@ export function PhotoLab() {
           photo.rgba,
           photo.width,
           photo.height,
-          { ...DEFAULT_PHOTO_OPTIONS, colors, maxRegions, smoothing },
+          { ...DEFAULT_PHOTO_OPTIONS, colors, maxRegions, smoothing, faceLines },
           async (next) => {
             if (cancelled) throw new Error('cancelled');
             setStage(next);
@@ -126,7 +127,7 @@ export function PhotoLab() {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [photo, colors, maxRegions, smoothing]);
+  }, [photo, colors, maxRegions, smoothing, faceLines]);
 
   useEffect(() => {
     if (photo) drawPixels(originalRef.current, photo.width, photo.height, photo.rgba);
@@ -209,6 +210,10 @@ export function PhotoLab() {
           <label className="field">
             <span>다듬는 세기 {smoothing}</span>
             <input type="range" min={0} max={3} value={smoothing} onChange={(e) => setSmoothing(Number(e.target.value))} />
+          </label>
+          <label className="field field--check">
+            <input type="checkbox" checked={faceLines} data-testid="face-lines" onChange={(e) => setFaceLines(e.target.checked)} />
+            <span>얼굴의 눈·코·입을 선으로 남기기</span>
           </label>
           <p className="note" data-testid="status">
             {stage
