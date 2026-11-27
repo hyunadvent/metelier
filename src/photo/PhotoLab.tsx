@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { buildPackage, hexToRgb, labelSize, LINE_COLOR, savePackage } from '../editor/exportPainting';
+import { buildPackage, hexToRgb, labelSize, savePackage } from '../editor/exportPainting';
 import { DEFAULT_PHOTO_OPTIONS, fitSize, photoToPainting, type PhotoPainting, type PhotoStage } from './photoToPainting';
 
 const STAGE_LABEL: Record<PhotoStage, string> = {
@@ -9,6 +9,9 @@ const STAGE_LABEL: Record<PhotoStage, string> = {
   lines: '선과 번호를 넣는 중…',
 };
 const TEST_ID = 'photo-test';
+/** 사진으로 만든 그림의 선과 검게 채운 곳의 색: 갈색 기운이 도는 검정 */
+const INK = [44, 37, 34] as const;
+const PAPER = [255, 253, 248];
 
 interface Photo {
   name: string;
@@ -59,15 +62,16 @@ function drawPainting(canvas: HTMLCanvasElement | null, painting: PhotoPainting,
   canvas.height = height;
   const ctx = canvas.getContext('2d')!;
   const colorOf = new Map(palette.map((p) => [p.number, hexToRgb(p.color)]));
-  const fills = regions.map((r) => (filled ? (colorOf.get(assignment[r.id - 1]) ?? [255, 253, 248]) : [255, 253, 248]));
+  const fills = regions.map((r) => (filled ? (colorOf.get(assignment[r.id - 1]) ?? PAPER) : PAPER));
   const image = ctx.createImageData(width, height);
   for (let i = 0; i < darkness.length; i++) {
-    const fill = fills[seg.ids[i] - 1];
+    // 칸 번호 0 은 검게 채운 곳이다
+    const fill = fills[seg.ids[i] - 1] ?? PAPER;
     const a = darkness[i] / 255;
     const o = i * 4;
-    image.data[o] = fill[0] * (1 - a) + LINE_COLOR[0] * a;
-    image.data[o + 1] = fill[1] * (1 - a) + LINE_COLOR[1] * a;
-    image.data[o + 2] = fill[2] * (1 - a) + LINE_COLOR[2] * a;
+    image.data[o] = fill[0] * (1 - a) + INK[0] * a;
+    image.data[o + 1] = fill[1] * (1 - a) + INK[1] * a;
+    image.data[o + 2] = fill[2] * (1 - a) + INK[2] * a;
     image.data[o + 3] = 255;
   }
   ctx.putImageData(image, 0, 0);
@@ -91,6 +95,7 @@ export function PhotoLab() {
   const [maxRegions, setMaxRegions] = useState(DEFAULT_PHOTO_OPTIONS.maxRegions);
   const [smoothing, setSmoothing] = useState(DEFAULT_PHOTO_OPTIONS.smoothing);
   const [faceLines, setFaceLines] = useState(DEFAULT_PHOTO_OPTIONS.faceLines);
+  const [blackFill, setBlackFill] = useState(DEFAULT_PHOTO_OPTIONS.blackFill);
   const [painting, setPainting] = useState<PhotoPainting | null>(null);
   const [stage, setStage] = useState<PhotoStage | null>(null);
   const [seconds, setSeconds] = useState<number | null>(null);
@@ -117,7 +122,7 @@ export function PhotoLab() {
           photo.rgba,
           photo.width,
           photo.height,
-          { ...DEFAULT_PHOTO_OPTIONS, colors, maxRegions, smoothing, faceLines },
+          { ...DEFAULT_PHOTO_OPTIONS, colors, maxRegions, smoothing, faceLines, blackFill },
           async (next) => {
             if (cancelled) throw new Error('cancelled');
             setStage(next);
@@ -139,7 +144,7 @@ export function PhotoLab() {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [photo, colors, maxRegions, smoothing, faceLines]);
+  }, [photo, colors, maxRegions, smoothing, faceLines, blackFill]);
 
   useEffect(() => {
     if (photo) drawPixels(originalRef.current, photo.width, photo.height, photo.rgba);
@@ -156,7 +161,7 @@ export function PhotoLab() {
     if (!painting || !photo) return;
     try {
       const title = photo.name.replace(/\.[^.]+$/, '') || '사진';
-      await savePackage(TEST_ID, buildPackage({ id: TEST_ID, title, ...painting }));
+      await savePackage(TEST_ID, buildPackage({ id: TEST_ID, title, ...painting, lineColor: INK }));
       setMessage({ kind: 'ok', text: `public/paintings/${TEST_ID}/ 에 저장했습니다.` });
     } catch (e) {
       setMessage({ kind: 'error', text: e instanceof Error ? e.message : String(e) });
@@ -222,6 +227,10 @@ export function PhotoLab() {
           <label className="field">
             <span>다듬는 세기 {smoothing}</span>
             <input type="range" min={0} max={3} value={smoothing} onChange={(e) => setSmoothing(Number(e.target.value))} />
+          </label>
+          <label className="field">
+            <span>검게 채워 둘 어둡기 {blackFill === 0 ? '끔' : blackFill}</span>
+            <input type="range" min={0} max={50} value={blackFill} data-testid="black-fill" onChange={(e) => setBlackFill(Number(e.target.value))} />
           </label>
           <label className="field field--check">
             <input type="checkbox" checked={faceLines} data-testid="face-lines" onChange={(e) => setFaceLines(e.target.checked)} />

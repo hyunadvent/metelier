@@ -97,7 +97,7 @@ describe('이미지 연산', () => {
 });
 
 describe('사진을 색칠 그림으로', () => {
-  const options = { colors: 3, maxRegions: 50, outputSize: 240, workSize: 120, smoothing: 2, faceLines: false };
+  const options = { colors: 3, maxRegions: 50, outputSize: 240, workSize: 120, smoothing: 2, faceLines: false, blackFill: 0 };
 
   it('면마다 칸이 되고, 칸의 번호는 원본 색을 가리킨다', async () => {
     const painting = await photoToPainting(testPhoto(), W, H, options);
@@ -225,7 +225,7 @@ describe('얼굴의 눈·코·입을 선으로 남기기', () => {
   });
 
   it('눈과 입은 칸이 되지 않고 얼굴 칸 위의 선으로 남는다', async () => {
-    const options = { colors: 4, maxRegions: 50, outputSize: 400, workSize: 200, smoothing: 1, faceLines: true };
+    const options = { colors: 4, maxRegions: 50, outputSize: 400, workSize: 200, smoothing: 1, faceLines: true, blackFill: 0 };
     const painting = await photoToPainting(facePhoto(), FW, FH, options);
     const at = (x: number, y: number) => y * 2 * painting.width + x * 2; // 결과는 원본의 두 배 크기
     const face = painting.seg.ids[at(70, 85)];
@@ -249,9 +249,9 @@ describe('얼굴의 눈·코·입을 선으로 남기기', () => {
     for (let i = 0; i < photo.length; i += 4) {
       for (let c = 0; c < 3; c++) photo[i + c] = photo[i + c] + (random() - 0.5) * 24;
     }
-    const options = { colors: 4, maxRegions: 50, outputSize: 400, workSize: 200, smoothing: 2, faceLines: true };
+    const options = { colors: 4, maxRegions: 50, outputSize: 400, workSize: 200, smoothing: 2, faceLines: true, blackFill: 0 };
     const kept = (await photoToPainting(photo, FW, FH, options)).smoothed.rgba;
-    const blurred = (await photoToPainting(photo, FW, FH, { ...options, faceLines: false })).smoothed.rgba;
+    const blurred = (await photoToPainting(photo, FW, FH, { ...options, faceLines: false, blackFill: 0 })).smoothed.rgba;
     const same = (data: Uint8ClampedArray, x: number, y: number) => {
       const o = (y * FW + x) * 4;
       return data[o] === photo[o] && data[o + 1] === photo[o + 1] && data[o + 2] === photo[o + 2];
@@ -269,12 +269,98 @@ describe('얼굴의 눈·코·입을 선으로 남기기', () => {
   });
 
   it('옵션을 끄면 눈과 입 자리에 선을 따로 그리지 않는다', async () => {
-    const options = { colors: 4, maxRegions: 50, outputSize: 400, workSize: 200, smoothing: 1, faceLines: false };
+    const options = { colors: 4, maxRegions: 50, outputSize: 400, workSize: 200, smoothing: 1, faceLines: false, blackFill: 0 };
     const off = await photoToPainting(facePhoto(), FW, FH, options);
-    const on = await photoToPainting(facePhoto(), FW, FH, { ...options, faceLines: true });
+    const on = await photoToPainting(facePhoto(), FW, FH, { ...options, faceLines: true, blackFill: 0 });
     const inked = (d: Uint8Array) => d.reduce((n, v) => n + (v > 128 ? 1 : 0), 0);
     // 켰을 때는 눈과 입의 선이 온전히 남는다. 껐을 때 그 자리는 얼굴에 합쳐져 사라지거나 칸의 테두리만 남는다.
     expect(on.darkness[(69 * 2) * on.width + 52 * 2]).toBeGreaterThan(200);
     expect(inked(on.darkness)).not.toBe(inked(off.darkness));
+  });
+});
+
+describe('검정에 가까운 곳은 칸으로 나누지 않고 채워 둔다', () => {
+  const BW = 160;
+  const BH = 100;
+  const options = { colors: 4, maxRegions: 50, outputSize: 320, workSize: 160, smoothing: 1, faceLines: false, blackFill: 22 };
+
+  /** 왼쪽은 빨강, 오른쪽은 검정. 빨간 면을 가로지르는 검은 가는 줄(3픽셀)과, 아래쪽의 짙은 남색 띠가 있다. */
+  function darkPhoto(): Uint8ClampedArray {
+    const rgba = new Uint8ClampedArray(BW * BH * 4);
+    for (let y = 0; y < BH; y++) {
+      for (let x = 0; x < BW; x++) {
+        let color = x < 100 ? [205, 60, 55] : [26, 26, 28];
+        if (y >= 30 && y < 33 && x < 100) color = [30, 30, 30];
+        if (y >= 70) color = [40, 46, 62]; // 색 기운이 있는 어두운 남색 (짙은 남색 바지)
+        rgba.set([...color, 255], (y * BW + x) * 4);
+      }
+    }
+    return rgba;
+  }
+  const at = (p: { width: number }, x: number, y: number) => y * 2 * p.width + x * 2;
+
+  it('검은 곳은 칠할 수 없는 곳(칸 번호 0)이 되고 선화에 검게 채워진다', async () => {
+    const p = await photoToPainting(darkPhoto(), BW, BH, options);
+    expect(p.seg.ids[at(p, 130, 40)]).toBe(0);
+    expect(p.darkness[at(p, 130, 40)]).toBe(255);
+    // 빨간 면은 칠하는 칸이다
+    expect(p.seg.ids[at(p, 40, 10)]).toBeGreaterThan(0);
+    expect(p.darkness[at(p, 40, 10)]).toBe(0);
+  });
+
+  it('가는 검은 줄도 합쳐져 사라지지 않고 그림에 남는다', async () => {
+    const p = await photoToPainting(darkPhoto(), BW, BH, options);
+    expect(p.seg.ids[at(p, 50, 31)]).toBe(0);
+    expect(p.darkness[at(p, 50, 31)]).toBe(255);
+    // 줄의 위아래는 서로 다른 빨간 칸이거나 같은 칸이어도, 모두 칠할 수 있는 칸이다
+    expect(p.seg.ids[at(p, 50, 20)]).toBeGreaterThan(0);
+    expect(p.seg.ids[at(p, 50, 45)]).toBeGreaterThan(0);
+  });
+
+  it('검정은 물감 번호로 뽑히지 않는다', async () => {
+    const p = await photoToPainting(darkPhoto(), BW, BH, options);
+    const lightest = p.palette.map((e) => Math.max(...[1, 3, 5].map((o) => parseInt(e.color.slice(o, o + 2), 16))));
+    // 모든 물감 색에 밝은 성분이 있다 (검정 26, 30 근처의 색이 없다)
+    expect(Math.min(...lightest)).toBeGreaterThan(60);
+    expect(p.assignment.every((n) => n >= 1 && n <= p.palette.length)).toBe(true);
+    expect(p.regions.length).toBe(p.seg.count);
+  });
+
+  it('색 기운이 있는 어두운 색은 검정으로 채우지 않는다', async () => {
+    const p = await photoToPainting(darkPhoto(), BW, BH, options);
+    expect(p.seg.ids[at(p, 40, 85)]).toBeGreaterThan(0);
+    // 기준을 높이면 그 색도 검게 채워진다
+    const more = await photoToPainting(darkPhoto(), BW, BH, { ...options, blackFill: 50 });
+    expect(more.seg.ids[at(more, 40, 85)]).toBe(0);
+  });
+
+  it('끄면 검은 곳도 칠하는 칸이 된다', async () => {
+    const p = await photoToPainting(darkPhoto(), BW, BH, { ...options, blackFill: 0 });
+    expect(p.seg.ids[at(p, 130, 40)]).toBeGreaterThan(0);
+    expect(p.seg.ids.every((id) => id >= 1)).toBe(true);
+  });
+});
+
+describe('검정과 이어진 어두운 곳', () => {
+  it('확실히 검은 곳과 이어져 있으면 조금 덜 어두운 곳도 함께 채운다', async () => {
+    // 왼쪽은 빨강. 가운데는 검정(20), 그 오른쪽에 이어진 조금 덜 어두운 회색(46), 맨 오른쪽에 떨어져 있는 같은 회색
+    const w = 160;
+    const h = 60;
+    const rgba = new Uint8ClampedArray(w * h * 4);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        let color = [205, 60, 55];
+        if (x >= 40 && x < 70) color = [20, 20, 20];
+        if (x >= 70 && x < 100) color = [46, 46, 46];
+        if (x >= 130) color = [46, 46, 46];
+        rgba.set([...color, 255], (y * w + x) * 4);
+      }
+    }
+    const options = { colors: 4, maxRegions: 50, outputSize: 320, workSize: 160, smoothing: 0, faceLines: false, blackFill: 14 };
+    const p = await photoToPainting(rgba, w, h, options);
+    const at = (x: number, y: number) => y * 2 * p.width + x * 2;
+    expect(p.seg.ids[at(55, 30)]).toBe(0); // 검정
+    expect(p.seg.ids[at(85, 30)]).toBe(0); // 검정과 이어진 회색: 함께 채워진다
+    expect(p.seg.ids[at(145, 30)]).toBeGreaterThan(0); // 떨어져 있는 같은 회색: 칠하는 칸으로 남는다
   });
 });

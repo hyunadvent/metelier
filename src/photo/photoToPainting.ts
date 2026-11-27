@@ -21,7 +21,18 @@ export interface PhotoOptions {
    * 살색인 곳 안의 작은 무늬는 얼굴 칸에 합치고, 그 자리에 어두운 선을 그려 표정이 보이게 한다.
    */
   faceLines: boolean;
+  /**
+   * 검정에 가까운 곳을 칸으로 나누지 않고 선화에 검게 채운 채로 둔다. 0 이면 끈다.
+   * 값은 "밝기 + 색의 진하기 x 2" 의 상한이다 (밝기는 0 = 검정, 100 = 흰색).
+   * 색 기운이 있는 어두운 색(짙은 남색 바지)은 같은 밝기의 검정보다 늦게 채워진다.
+   */
+  blackFill: number;
 }
+
+/** 검게 채운 곳을 나타내는 색 묶음 번호. 물감 묶음(0..253)과 겹치지 않는다. */
+const BLACK = 255;
+/** 확실히 검은 곳과 이어져 있으면, 기준보다 이만큼 덜 어두운 곳까지 함께 채운다. */
+const BLACK_SPREAD = 12;
 
 export const DEFAULT_PHOTO_OPTIONS: PhotoOptions = {
   colors: 14,
@@ -30,12 +41,13 @@ export const DEFAULT_PHOTO_OPTIONS: PhotoOptions = {
   workSize: 1024,
   smoothing: 2,
   faceLines: true,
+  blackFill: 30,
 };
 
 export interface PhotoPainting {
   width: number;
   height: number;
-  /** 픽셀마다 칸 번호 (1..regions.length). 모든 픽셀이 어느 칸에 속한다. */
+  /** 픽셀마다 칸 번호 (1..regions.length). 검게 채운 곳은 0 이며 칠할 수 없다. */
   seg: Segmentation;
   /** 선화: 픽셀마다 선의 진하기 (0~255) */
   darkness: Uint8Array;
@@ -138,11 +150,50 @@ export async function photoToPainting(
   // 2. 색 묶기: 비슷한 색을 물감 수만큼의 묶음으로 나눈다
   await onStage?.('colors');
   const lab = toLab(smoothed);
+  // 검정에 가까운 곳: 물감 색으로 뽑지 않고 선화에 검게 채워 둔다. 얼굴 안(눈, 눈썹)은 선으로 따로 다루므로 뺀다.
+  let black: Uint8Array | null = null;
+  if (options.blackFill > 0) {
+    // 2 = 확실히 검정, 1 = 검정에 꽤 가까움
+    const level = new Uint8Array(lab.length / 3);
+    for (let i = 0; i < level.length; i++) {
+      if (closed && closed[i]) continue;
+      const darkness = lab[i * 3] + Math.hypot(lab[i * 3 + 1], lab[i * 3 + 2]) * 2;
+      if (darkness < options.blackFill) level[i] = 2;
+      else if (darkness < options.blackFill + BLACK_SPREAD) level[i] = 1;
+    }
+    // 확실히 검은 곳에서 출발해, 이어져 있는 "꽤 가까운" 곳까지 넓힌다.
+    // 한 물건(짙은 바지, 검은 옷)이 그늘진 부분만 얼룩덜룩하게 검어지지 않고 통째로 채워지게 한다.
+    const dark = new Uint8Array(level.length);
+    const queue = new Int32Array(level.length);
+    let head = 0;
+    let tail = 0;
+    for (let i = 0; i < level.length; i++) {
+      if (level[i] === 2) {
+        dark[i] = 1;
+        queue[tail++] = i;
+      }
+    }
+    while (head < tail) {
+      const i = queue[head++];
+      const x = i % width;
+      const grow = (j: number) => {
+        if (dark[j] || level[j] === 0) return;
+        dark[j] = 1;
+        queue[tail++] = j;
+      };
+      if (x > 0) grow(i - 1);
+      if (x < width - 1) grow(i + 1);
+      if (i >= width) grow(i - width);
+      if (i < level.length - width) grow(i + width);
+    }
+    // 점처럼 흩어진 것은 지우고 가장자리를 다듬는다
+    black = modeFilter(dark, width, height, 1, 2);
+  }
   for (let i = 0; i < lab.length; i += 3) {
     lab[i + 1] *= CHROMA_WEIGHT;
     lab[i + 2] *= CHROMA_WEIGHT;
   }
-  const { labels: rough, k } = quantize(lab, options.colors, 7);
+  const { labels: rough, k } = quantize(lab, options.colors, 7, black ?? undefined);
   // 묶음마다의 대표 색 (칸을 합칠 때 색이 비슷한 이웃을 고르는 데 쓴다)
   const centers = new Float64Array(k * 4);
   for (let i = 0; i < rough.length; i++) {
@@ -153,6 +204,8 @@ export async function photoToPainting(
     centers[c + 3]++;
   }
   const colorDistance = (a: number, b: number) => {
+    // 검게 채운 곳은 어느 물감 색과도 멀다고 본다: 작은 칸이 검정보다는 색이 있는 이웃에 합쳐지게 한다
+    if (a === BLACK || b === BLACK) return 90;
     const na = centers[a * 4 + 3] || 1;
     const nb = centers[b * 4 + 3] || 1;
     return Math.hypot(
@@ -163,6 +216,7 @@ export async function photoToPainting(
   };
   let labels = modeFilter(rough, width, height, 2, k);
   labels = modeFilter(labels, width, height, 2, k);
+  if (black) for (let i = 0; i < labels.length; i++) if (black[i]) labels[i] = BLACK;
 
   // 2-1. 얼굴: 눈·코·입을 칸이 아니라 선으로 남긴다
   // 선을 그려도 되는 곳(작업 크기)과, 얼굴의 크기를 짐작한 값
@@ -182,24 +236,30 @@ export async function photoToPainting(
   await onStage?.('regions');
   const out = fitSize(width, height, options.outputSize);
   let big = out.width === width && out.height === height ? labels : upscaleLabels(labels, width, height, out.width, out.height);
-  if (big !== labels) big = modeFilter(big, out.width, out.height, 2, k);
+  if (big !== labels) big = modeFilter(big, out.width, out.height, 2, black ? 256 : k);
   const total = out.width * out.height;
 
   // 너무 작은 칸은 번호를 적거나 칠하기 어렵다: 이웃 칸에 합친다.
   // 그래도 칸이 너무 많으면 기준을 조금씩 올려 가며 더 합친다.
   let minArea = Math.max(4, Math.round(total * 0.0003));
+  // 검게 채운 곳은 칠하는 칸이 아니므로 가늘거나 작아도 그대로 둔다 (가는 검은 줄이 그림에 남는다).
+  // 먼지처럼 아주 작은 것만 이웃에 합친다.
+  const blackDust = Math.max(4, Math.round(total * 0.00002));
   let comp = components(big, out.width, out.height);
   for (let round = 0; round < 60; round++) {
     const selected = new Uint8Array(comp.count + 1);
     let small = 0;
+    let paintable = 0;
     for (let id = 1; id <= comp.count; id++) {
-      if (comp.sizes[id] < minArea) {
+      const isBlack = comp.labelOf[id] === BLACK;
+      if (!isBlack) paintable++;
+      if (comp.sizes[id] < (isBlack ? blackDust : minArea)) {
         selected[id] = 1;
         small++;
       }
     }
     if (small === 0) {
-      if (comp.count <= options.maxRegions) break;
+      if (paintable <= options.maxRegions) break;
       minArea = Math.ceil(minArea * 1.35);
       continue;
     }
@@ -214,7 +274,7 @@ export async function photoToPainting(
     const selected = new Uint8Array(comp.count + 1);
     let thin = 0;
     for (const r of info) {
-      if (r.clearance < Math.max(3, out.width / 400) && comp.count - thin > 1) {
+      if (comp.labelOf[r.id] !== BLACK && r.clearance < Math.max(3, out.width / 400) && comp.count - thin > 1) {
         selected[r.id] = 1;
         thin++;
       }
@@ -246,7 +306,20 @@ export async function photoToPainting(
       if (line > darkness[i]) darkness[i] = line;
     }
   }
-  const seg: Segmentation = { ids: Uint16Array.from(comp.ids), count: comp.count };
+  // 칠하는 칸에만 번호를 매긴다. 검게 채운 곳은 칸 번호 0 (칠할 수 없는 곳) 이 되고 선화에 검게 그려진다.
+  const newId = new Uint16Array(comp.count + 1);
+  const labelOfRegion: number[] = [0];
+  for (let id = 1; id <= comp.count; id++) {
+    if (comp.labelOf[id] === BLACK) continue;
+    newId[id] = labelOfRegion.length;
+    labelOfRegion.push(comp.labelOf[id]);
+  }
+  const ids = new Uint16Array(total);
+  for (let i = 0; i < total; i++) {
+    ids[i] = newId[comp.ids[i]];
+    if (big[i] === BLACK) darkness[i] = 255;
+  }
+  const seg: Segmentation = { ids, count: labelOfRegion.length - 1 };
   const regions = describeRegions(seg, out.width, out.height, darkness, 128);
 
   // 묶음마다의 색: 다듬은 사진에서 그 묶음에 속한 픽셀들의 평균. 원본의 색을 그대로 따른다.
@@ -256,6 +329,7 @@ export async function photoToPainting(
     for (let x = 0; x < out.width; x++) {
       const sx = Math.min(width - 1, Math.floor(((x + 0.5) * width) / out.width));
       const label = big[y * out.width + x];
+      if (label === BLACK) continue;
       const o = (sy * width + sx) * 4;
       sums[label * 4] += smoothed[o];
       sums[label * 4 + 1] += smoothed[o + 1];
@@ -280,7 +354,7 @@ export async function photoToPainting(
     seg,
     darkness,
     regions,
-    assignment: regions.map((r) => numberOf[comp.labelOf[r.id]]),
+    assignment: regions.map((r) => numberOf[labelOfRegion[r.id]]),
     palette,
     smoothed: { width, height, rgba: smoothed },
   };

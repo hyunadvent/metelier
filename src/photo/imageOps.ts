@@ -114,14 +114,16 @@ export interface Quantized {
 /**
  * 색을 k 개로 묶는다 (k-평균, Lab 색 공간).
  * 픽셀 일부만 뽑아 묶음의 중심을 정한 뒤, 모든 픽셀을 가장 가까운 묶음에 넣는다.
+ * @param skip 표시된 픽셀은 묶음의 중심을 정할 때 빼고 본다 (물감으로 쓰지 않을 색)
  */
-export function quantize(lab: Float32Array, k: number, seed = 1): Quantized {
+export function quantize(lab: Float32Array, k: number, seed = 1, skip?: Uint8Array): Quantized {
   const n = lab.length / 3;
-  k = Math.max(1, Math.min(k, 255, n));
+  k = Math.max(1, Math.min(k, 254, n));
   const random = seededRandom(seed);
   const step = Math.max(1, Math.floor(n / 40000));
   const sample: number[] = [];
-  for (let i = Math.floor(step / 2); i < n; i += step) sample.push(i);
+  for (let i = Math.floor(step / 2); i < n; i += step) if (!skip || !skip[i]) sample.push(i);
+  if (sample.length === 0) sample.push(0);
   const m = sample.length;
 
   const centers = new Float32Array(k * 3);
