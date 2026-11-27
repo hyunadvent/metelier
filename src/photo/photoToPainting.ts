@@ -38,7 +38,7 @@ export const DEFAULT_PHOTO_OPTIONS: PhotoOptions = {
   maxRegions: 160,
   outputSize: 2048,
   workSize: 1024,
-  smoothing: 2,
+  smoothing: 3,
   faceLines: true,
   thinLines: true,
   edgeMerge: 0.7,
