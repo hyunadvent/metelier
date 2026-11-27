@@ -91,6 +91,8 @@ export function PhotoLab() {
   const [maxRegions, setMaxRegions] = useState(DEFAULT_PHOTO_OPTIONS.maxRegions);
   const [smoothing, setSmoothing] = useState(DEFAULT_PHOTO_OPTIONS.smoothing);
   const [faceLines, setFaceLines] = useState(DEFAULT_PHOTO_OPTIONS.faceLines);
+  const [thinLines, setThinLines] = useState(DEFAULT_PHOTO_OPTIONS.thinLines);
+  const [edgeMerge, setEdgeMerge] = useState(DEFAULT_PHOTO_OPTIONS.edgeMerge);
   const [painting, setPainting] = useState<PhotoPainting | null>(null);
   const [stage, setStage] = useState<PhotoStage | null>(null);
   const [seconds, setSeconds] = useState<number | null>(null);
@@ -117,7 +119,7 @@ export function PhotoLab() {
           photo.rgba,
           photo.width,
           photo.height,
-          { ...DEFAULT_PHOTO_OPTIONS, colors, maxRegions, smoothing, faceLines },
+          { ...DEFAULT_PHOTO_OPTIONS, colors, maxRegions, smoothing, faceLines, thinLines, edgeMerge },
           async (next) => {
             if (cancelled) throw new Error('cancelled');
             setStage(next);
@@ -139,7 +141,7 @@ export function PhotoLab() {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [photo, colors, maxRegions, smoothing, faceLines]);
+  }, [photo, colors, maxRegions, smoothing, faceLines, thinLines, edgeMerge]);
 
   useEffect(() => {
     if (photo) drawPixels(originalRef.current, photo.width, photo.height, photo.rgba);
@@ -222,6 +224,14 @@ export function PhotoLab() {
           <label className="field">
             <span>다듬는 세기 {smoothing}</span>
             <input type="range" min={0} max={3} value={smoothing} onChange={(e) => setSmoothing(Number(e.target.value))} />
+          </label>
+          <label className="field">
+            <span>흐릿한 경계 합치기 {edgeMerge === 0 ? '끔' : edgeMerge.toFixed(1)}</span>
+            <input type="range" min={0} max={2} step={0.1} value={edgeMerge} data-testid="edge-merge" onChange={(e) => setEdgeMerge(Number(e.target.value))} />
+          </label>
+          <label className="field field--check">
+            <input type="checkbox" checked={thinLines} data-testid="thin-lines" onChange={(e) => setThinLines(e.target.checked)} />
+            <span>가는 줄은 칸이 아닌 선으로 남기기</span>
           </label>
           <label className="field field--check">
             <input type="checkbox" checked={faceLines} data-testid="face-lines" onChange={(e) => setFaceLines(e.target.checked)} />

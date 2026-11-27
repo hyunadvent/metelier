@@ -3,7 +3,7 @@
 import type { PaletteEntry } from '../coloring/painting';
 import { describeRegions, type RegionInfo, type Segmentation } from '../editor/segment';
 import { closeHoles, dilate, erode, featureLines, fillHolesWithSkin, flattenSkin, luminance, skinMask, upscaleMap } from './faceLines';
-import { absorb, bilateral, components, modeFilter, quantize, toLab, upscaleLabels } from './imageOps';
+import { absorb, bilateral, components, edgeStrength, mergeWeakBorders, modeFilter, quantize, toLab, upscaleLabels } from './imageOps';
 
 export interface PhotoOptions {
   /** 물감 색의 수 (번호의 수) */
@@ -21,6 +21,16 @@ export interface PhotoOptions {
    * 살색인 곳 안의 작은 무늬는 얼굴 칸에 합치고, 그 자리에 어두운 선을 그려 표정이 보이게 한다.
    */
   faceLines: boolean;
+  /**
+   * 가는 어두운 줄(벽의 줄무늬, 글씨, 머리카락 가닥)을 칸으로 나누지 않고 선으로 남긴다.
+   * 가는 줄이 칸이 되면 칠하기 어렵고, 이웃 칸에 붙어 삐죽 튀어나온 모양을 만든다.
+   */
+  thinLines: boolean;
+  /**
+   * 실제 윤곽이 없는 경계를 합치는 세기 (0 = 끔). 클수록 흐릿한 경계까지 합쳐 칸이 단순해진다.
+   * 조명 때문에 벽이나 옷이 여러 칸으로 쪼개지는 것을 막는다.
+   */
+  edgeMerge: number;
 }
 
 export const DEFAULT_PHOTO_OPTIONS: PhotoOptions = {
@@ -30,6 +40,8 @@ export const DEFAULT_PHOTO_OPTIONS: PhotoOptions = {
   workSize: 1024,
   smoothing: 2,
   faceLines: true,
+  thinLines: true,
+  edgeMerge: 0.7,
 };
 
 export interface PhotoPainting {
@@ -164,6 +176,20 @@ export async function photoToPainting(
   let labels = modeFilter(rough, width, height, 2, k);
   labels = modeFilter(labels, width, height, 2, k);
 
+  // 2-0. 가는 어두운 줄은 칸이 아니라 선으로 남긴다 (얼굴 안은 아래에서 따로 다룬다)
+  let thin: Float32Array | null = null;
+  if (options.thinLines) {
+    const outside = new Uint8Array(width * height);
+    for (let i = 0; i < outside.length; i++) outside[i] = closed && closed[i] ? 0 : 1;
+    const sigma = Math.max(0.9, Math.max(width, height) / 700);
+    thin = featureLines(luminance(rgba), width, height, outside, sigma, { start: 0.075, range: 0.05, blob: 0 });
+    // 줄이 있던 자리는 칸을 나눌 때 없는 것으로 친다: 줄 양옆의 색 묶음으로 메운다
+    const keep = new Uint8Array(width * height);
+    const everywhere = new Uint8Array(width * height).fill(1);
+    for (let i = 0; i < keep.length; i++) keep[i] = thin[i] > 0.5 ? 0 : 1;
+    fillHolesWithSkin(labels, keep, everywhere, width, height);
+  }
+
   // 2-1. 얼굴: 눈·코·입을 칸이 아니라 선으로 남긴다
   // 선을 그려도 되는 곳(작업 크기)과, 얼굴의 크기를 짐작한 값
   let face: { inside: Uint8Array; size: number } | null = null;
@@ -189,6 +215,33 @@ export async function photoToPainting(
   // 그래도 칸이 너무 많으면 기준을 조금씩 올려 가며 더 합친다.
   let minArea = Math.max(4, Math.round(total * 0.0003));
   let comp = components(big, out.width, out.height);
+
+  // 실제 윤곽이 없는 경계를 합친다: 조명 때문에 쪼개진 벽, 그늘, 옷의 주름이 한 칸이 된다
+  if (options.edgeMerge > 0) {
+    const edges = edgeStrength(smoothed, width, height);
+    // 가는 줄이 지나가는 자리는 뺀다: 줄 자체가 뚜렷한 윤곽이라, 벽을 가로지르는 줄무늬가 있으면
+    // 그 위를 지나는 경계가 모두 "윤곽이 있는 경계" 로 보이기 때문이다.
+    if (thin) {
+      const lines = new Uint8Array(thin.length);
+      for (let i = 0; i < lines.length; i++) lines[i] = thin[i] > 0.2 ? 1 : 0;
+      const near = dilate(lines, width, height, 4);
+      for (let i = 0; i < edges.length; i++) if (near[i]) edges[i] = -1;
+    }
+    const strengthAt = (i: number) => {
+      const x = i % out.width;
+      const y = (i - x) / out.width;
+      const sx = Math.min(width - 1, Math.floor(((x + 0.5) * width) / out.width));
+      const sy = Math.min(height - 1, Math.floor(((y + 0.5) * height) / out.height));
+      return edges[sy * width + sx];
+    };
+    for (let round = 0; round < 3; round++) {
+      if (mergeWeakBorders(big, out.width, out.height, comp, strengthAt, options.edgeMerge, colorDistance, 45) === 0) break;
+      comp = components(big, out.width, out.height);
+    }
+    // 합친 뒤 남은 경계의 잔물결을 한 번 더 다듬는다
+    big = modeFilter(big, out.width, out.height, 3, k);
+    comp = components(big, out.width, out.height);
+  }
   for (let round = 0; round < 60; round++) {
     const selected = new Uint8Array(comp.count + 1);
     let small = 0;
@@ -226,6 +279,15 @@ export async function photoToPainting(
   // 4. 선화와 번호
   await onStage?.('lines');
   const darkness = drawLines(comp.ids, out.width, out.height, Math.max(1.5, out.width / 850));
+  if (thin) {
+    // 가는 줄을 결과 크기로 늘려 선화에 더한다. 흐릿한 가장자리는 잘라 내 또렷한 선으로 만든다.
+    const bigThin = upscaleMap(thin, width, height, out.width, out.height);
+    for (let i = 0; i < darkness.length; i++) {
+      const t = Math.min(1, Math.max(0, (bigThin[i] - 0.35) / 0.3));
+      const line = Math.round(t * t * (3 - 2 * t) * 255);
+      if (line > darkness[i]) darkness[i] = line;
+    }
+  }
   if (face) {
     // 얼굴의 선은 결과 크기에서 뽑는다. 작업 크기에서 뽑아 늘리면 작은 얼굴의 선이 뭉개진다.
     const up = out.width / width;

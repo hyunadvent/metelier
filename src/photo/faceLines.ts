@@ -224,7 +224,17 @@ export function flattenSkin(labels: Uint8Array, mask: Uint8Array, width: number,
  * @param mask 선을 그려도 되는 곳 (살색 면의 안쪽)
  * @param sigma 선 굵기에 맞춘 값 (픽셀). 얼굴이 클수록 크게 준다.
  */
-export function featureLines(lum: Float32Array, width: number, height: number, mask: Uint8Array, sigma: number): Float32Array {
+export function featureLines(
+  lum: Float32Array,
+  width: number,
+  height: number,
+  mask: Uint8Array,
+  sigma: number,
+  tuning: { start?: number; range?: number; blob?: number } = {},
+): Float32Array {
+  // start: 이보다 약한 무늬는 선으로 보지 않는다. range: 그 위로 이만큼 더 세면 완전히 진한 선이다.
+  // blob: 가는 줄이 아닌 조금 큰 어두운 점(눈동자, 벌린 입)을 얼마나 쳐줄지. 0 이면 가는 줄만 뽑는다.
+  const { start = 0.038, range = 0.04, blob: blobWeight = 0.6 } = tuning;
   const ink = new Float32Array(width * height);
   // 계산은 살색이 있는 범위에서만 한다
   let x0 = width;
@@ -262,9 +272,9 @@ export function featureLines(lum: Float32Array, width: number, height: number, m
     if (!mask[(Math.floor(i / cw) + y0) * width + (i % cw) + x0]) continue;
     const thin = (mid[i] - fine[i]) / (mid[i] + 30);
     const blob = (wide[i] - mid[i]) / (wide[i] + 30);
-    const strength = Math.max(thin, blob * 0.6);
+    const strength = Math.max(thin, blob * blobWeight);
     // 흐릿한 가장자리는 잘라 내 또렷한 선으로 만든다
-    const t = Math.min(1, Math.max(0, (strength - 0.038) / 0.04));
+    const t = Math.min(1, Math.max(0, (strength - start) / range));
     local[i] = t * t * (3 - 2 * t);
     if (local[i] > 0.5) on[i] = 1;
   }

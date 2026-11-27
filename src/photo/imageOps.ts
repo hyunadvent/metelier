@@ -39,6 +39,77 @@ export function toLab(rgba: Uint8ClampedArray | Uint8Array): Float32Array {
   return lab;
 }
 
+/** 가우시안 흐림 (가로 한 번, 세로 한 번). 한 채널짜리 실수 배열에 쓴다. */
+function blur(src: Float32Array, width: number, height: number, sigma: number): Float32Array {
+  const radius = Math.max(1, Math.ceil(sigma * 2.5));
+  const kernel = new Float32Array(radius * 2 + 1);
+  let sum = 0;
+  for (let k = -radius; k <= radius; k++) {
+    kernel[k + radius] = Math.exp(-(k * k) / (2 * sigma * sigma));
+    sum += kernel[k + radius];
+  }
+  for (let k = 0; k < kernel.length; k++) kernel[k] /= sum;
+  const tmp = new Float32Array(src.length);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      let acc = 0;
+      for (let k = -radius; k <= radius; k++) acc += src[y * width + Math.min(width - 1, Math.max(0, x + k))] * kernel[k + radius];
+      tmp[y * width + x] = acc;
+    }
+  }
+  const out = new Float32Array(src.length);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      let acc = 0;
+      for (let k = -radius; k <= radius; k++) acc += tmp[Math.min(height - 1, Math.max(0, y + k)) * width + x] * kernel[k + radius];
+      out[y * width + x] = acc;
+    }
+  }
+  return out;
+}
+
+/**
+ * 픽셀마다 "여기에 윤곽이 얼마나 뚜렷한가" 를 구한다 (이웃 픽셀과의 색 차이, Lab 단위 / 픽셀).
+ * 물건의 가장자리에서는 크고, 조명 때문에 색이 서서히 변하는 곳에서는 0 에 가깝다.
+ * 경계가 한두 픽셀 어긋나도 잡히도록 주변 5 x 5 에서 가장 큰 값을 쓴다.
+ */
+export function edgeStrength(rgba: Uint8ClampedArray | Uint8Array, width: number, height: number): Float32Array {
+  const lab = toLab(rgba);
+  const n = width * height;
+  const grad = new Float32Array(n);
+  for (let c = 0; c < 3; c++) {
+    const channel = new Float32Array(n);
+    for (let i = 0; i < n; i++) channel[i] = lab[i * 3 + c];
+    const soft = blur(channel, width, height, 1.5);
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const i = y * width + x;
+        const dx = (soft[y * width + Math.min(width - 1, x + 1)] - soft[y * width + Math.max(0, x - 1)]) / 2;
+        const dy = (soft[Math.min(height - 1, y + 1) * width + x] - soft[Math.max(0, y - 1) * width + x]) / 2;
+        grad[i] += dx * dx + dy * dy;
+      }
+    }
+  }
+  for (let i = 0; i < n; i++) grad[i] = Math.sqrt(grad[i]);
+  // 주변에서 가장 큰 값 (가로, 세로로 나눠 계산)
+  const widen = (src: Float32Array, horizontal: boolean) => {
+    const out = new Float32Array(n);
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        let best = 0;
+        for (let k = -2; k <= 2; k++) {
+          const nx = horizontal ? Math.min(width - 1, Math.max(0, x + k)) : x;
+          const ny = horizontal ? y : Math.min(height - 1, Math.max(0, y + k));
+          if (src[ny * width + nx] > best) best = src[ny * width + nx];
+        }
+        out[y * width + x] = best;
+      }
+    }
+    return out;
+  };
+  return widen(widen(grad, true), false);
+}
+
 // ── 다듬기: 윤곽은 남기고 자잘한 무늬와 잡티를 뭉갠다 ──
 
 /**
@@ -430,4 +501,109 @@ export function absorb(
     if (to >= 0) labels[i] = to;
   }
   return absorbed;
+}
+
+/**
+ * 실제 윤곽이 없는 경계를 사이에 둔 칸들을 하나로 합친다.
+ * 색을 몇 개로 묶다 보면 조명 때문에 서서히 변하는 면(벽, 그늘, 옷의 주름)이 여러 칸으로 쪼개지는데,
+ * 그 경계에는 물건의 가장자리 같은 뚜렷한 색 변화가 없다. 그런 경계만 골라 없앤다.
+ * 합쳐진 칸은 그 안에서 가장 넓게 쓰인 색 묶음이 된다. labels 를 직접 고친다.
+ *
+ * @param strengthAt 픽셀 번호 → 그 자리의 윤곽 세기. 음수를 돌려주면 그 픽셀은 세지 않는다 (가는 줄이 지나가는 자리)
+ * @param threshold 윤곽 세기가 이보다 약한 자리를 "윤곽이 없다" 고 본다.
+ *   경계 길이의 60% 이상이 그런 자리이면 합친다. 평균이 아니라 비율로 보는 것은,
+ *   다른 물건의 가장자리를 잠깐 스치는 짧은 구간 때문에 경계 전체가 남는 일을 막기 위해서다.
+ * @param colorDistance 두 색 묶음의 색 차이
+ * @param maxColorDistance 색이 이보다 많이 다른 칸끼리는 경계가 흐려도 합치지 않는다
+ * @returns 없앤 경계의 수
+ */
+/** 경계 길이 가운데 윤곽이 없는 자리가 이 비율 이상이면 그 경계를 없앤다. */
+const WEAK_BORDER_FRACTION = 0.6;
+
+export function mergeWeakBorders(
+  labels: Uint8Array,
+  width: number,
+  height: number,
+  comp: Components,
+  strengthAt: (index: number) => number,
+  threshold: number,
+  colorDistance: (a: number, b: number) => number,
+  maxColorDistance: number,
+): number {
+  const { ids, labelOf, sizes, count } = comp;
+  const n = width * height;
+  const stride = count + 1;
+  // 맞닿은 칸 쌍마다: 경계의 길이와, 그 가운데 윤곽이 없는 자리의 수
+  const borders = new Map<number, [number, number]>();
+  const touch = (a: number, b: number, i: number) => {
+    const key = a < b ? a * stride + b : b * stride + a;
+    const entry = borders.get(key);
+    const s = strengthAt(i);
+    if (s < 0) return;
+    const weakHere = s < threshold ? 1 : 0;
+    if (entry) {
+      entry[0]++;
+      entry[1] += weakHere;
+    } else {
+      borders.set(key, [1, weakHere]);
+    }
+  };
+  for (let i = 0; i < n; i++) {
+    const a = ids[i];
+    if (i % width < width - 1 && ids[i + 1] !== a) touch(a, ids[i + 1], i);
+    if (i < n - width && ids[i + width] !== a) touch(a, ids[i + width], i);
+  }
+
+  // 윤곽이 가장 없는 경계부터 차례로 합친다
+  const weak: [number, number, number][] = [];
+  for (const [key, [length, weakCount]] of borders) {
+    const fraction = weakCount / length;
+    if (fraction >= WEAK_BORDER_FRACTION) weak.push([-fraction, Math.floor(key / stride), key % stride]);
+  }
+  weak.sort((p, q) => p[0] - q[0]);
+  const parent = new Int32Array(count + 1);
+  for (let id = 0; id <= count; id++) parent[id] = id;
+  const find = (id: number): number => {
+    while (parent[id] !== id) {
+      parent[id] = parent[parent[id]];
+      id = parent[id];
+    }
+    return id;
+  };
+  let merged = 0;
+  for (const [, a, b] of weak) {
+    if (colorDistance(labelOf[a], labelOf[b]) > maxColorDistance) continue;
+    const ra = find(a);
+    const rb = find(b);
+    if (ra === rb) continue;
+    parent[rb] = ra;
+    merged++;
+  }
+  if (merged === 0) return 0;
+
+  // 합쳐진 무리마다 가장 넓게 쓰인 색 묶음을 고른다
+  const area = new Map<number, Map<number, number>>();
+  for (let id = 1; id <= count; id++) {
+    const root = find(id);
+    let byLabel = area.get(root);
+    if (!byLabel) {
+      byLabel = new Map();
+      area.set(root, byLabel);
+    }
+    byLabel.set(labelOf[id], (byLabel.get(labelOf[id]) ?? 0) + sizes[id]);
+  }
+  const labelOfRoot = new Int16Array(count + 1).fill(-1);
+  for (const [root, byLabel] of area) {
+    let best = -1;
+    let bestArea = -1;
+    for (const [label, size] of byLabel) {
+      if (size > bestArea) {
+        bestArea = size;
+        best = label;
+      }
+    }
+    labelOfRoot[root] = best;
+  }
+  for (let i = 0; i < n; i++) labels[i] = labelOfRoot[find(ids[i])];
+  return merged;
 }
