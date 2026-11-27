@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { OutlineEffect } from 'three/addons/effects/OutlineEffect.js';
+import { loadDecor } from './decor';
 import { buildAtelierRoom, configureRenderer, createOutline, type AtelierRoom } from './room';
 
 /** 화면 좌표의 사각형 */
@@ -31,7 +32,7 @@ export class EaselBackdrop {
     configureRenderer(this.renderer);
     this.outline = createOutline(this.renderer);
     this.scene.background = new THREE.Color(0xf6e7d4);
-    this.room = buildAtelierRoom();
+    this.room = buildAtelierRoom(loadDecor());
     this.scene.add(this.room.group);
     const canvas = this.renderer.domElement;
     canvas.style.display = 'block';

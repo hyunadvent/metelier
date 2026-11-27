@@ -1,7 +1,11 @@
 import * as THREE from 'three';
 import { lathe, smoothProfile } from './shapes';
 
-export type Pose3D = 'idle' | 'walk' | 'sit';
+/** 자세: 서 있기, 걷기, 앉기, 앉아서 차 마시기, 앉아서 책 읽기 */
+export type Pose3D = 'idle' | 'walk' | 'sit' | 'tea' | 'read';
+
+/** 팔을 벌린 각도 (어깨의 z 축 회전) */
+const ARM_SPREAD = 0.32;
 
 /** 엉덩이 높이 (모델 단위). 앉을 때 이 높이가 의자 위에 온다. */
 const HIP = 0.4;
@@ -20,6 +24,10 @@ export class Character3D {
   private readonly arms: THREE.Group[] = [];
   private readonly ears: THREE.Group[] = [];
   private readonly lids: THREE.Mesh[] = [];
+  /** 차를 마실 때 오른손에 드는 찻잔 */
+  private readonly cup = new THREE.Group();
+  /** 책을 읽을 때 두 손으로 드는 책 */
+  private readonly book = new THREE.Group();
   private readonly disposables: { dispose(): void }[] = [];
   private pose: Pose3D = 'idle';
   private time = 0;
@@ -90,10 +98,45 @@ export class Character3D {
       mesh(new THREE.CapsuleGeometry(0.062, 0.2, 6, 12), fur, shoulder).position.y = -0.15;
       mesh(new THREE.SphereGeometry(0.075, 12, 10), fur, shoulder).position.y = -0.31;
       mesh(new THREE.SphereGeometry(0.085, 12, 8), dress, shoulder).scale.set(1, 0.8, 1); // 소매
-      shoulder.rotation.z = x > 0 ? 0.32 : -0.32;
+      shoulder.rotation.z = x > 0 ? ARM_SPREAD : -ARM_SPREAD;
       this.upper.add(shoulder);
       this.arms.push(shoulder);
     }
+
+    // 찻잔: 오른손 끝에 달려 팔과 함께 움직인다. 팔을 앞으로 들었을 때 바로 서도록 미리 기울여 둔다.
+    this.cup.position.set(0, -0.37, 0.05);
+    this.cup.rotation.x = 1.1;
+    mesh(lathe([[0, 0], [0.045, 0], [0.066, 0.05], [0.072, 0.1], [0.064, 0.1], [0.058, 0.05], [0, 0.025]]), white, this.cup);
+    const teaSurface = mesh(new THREE.CircleGeometry(0.06, 16), mat(0xc98f5a, 0.3), this.cup);
+    teaSurface.rotation.x = -Math.PI / 2;
+    teaSurface.position.y = 0.085;
+    teaSurface.castShadow = false;
+    const cupHandle = mesh(new THREE.TorusGeometry(0.03, 0.008, 6, 12, Math.PI), white, this.cup);
+    cupHandle.position.set(0.068, 0.055, 0);
+    cupHandle.rotation.z = -Math.PI / 2;
+    this.cup.visible = false;
+    this.arms[1].add(this.cup);
+
+    // 책: 펼친 채 가슴 앞에 든다
+    this.book.position.set(0, 0.66, 0.36);
+    this.book.rotation.x = -0.95;
+    for (const side of [-1, 1]) {
+      const cover = mesh(new THREE.BoxGeometry(0.19, 0.012, 0.27), mat(0x6fb7e9), this.book);
+      cover.position.set(side * 0.092, 0, 0);
+      cover.rotation.z = side * 0.22;
+      const page = mesh(new THREE.BoxGeometry(0.175, 0.014, 0.25), white, this.book);
+      page.position.set(side * 0.09, 0.012, 0);
+      page.rotation.z = side * 0.22;
+      // 글줄
+      for (let k = 0; k < 5; k++) {
+        const line = mesh(new THREE.BoxGeometry(0.12, 0.002, 0.008), dark, this.book);
+        line.position.set(side * 0.09, 0.021, -0.08 + k * 0.04);
+        line.rotation.z = side * 0.22;
+        line.castShadow = false;
+      }
+    }
+    this.book.visible = false;
+    this.upper.add(this.book);
 
     // 머리
     this.head.position.y = 1.24;
@@ -138,12 +181,19 @@ export class Character3D {
 
   setPose(pose: Pose3D): void {
     this.pose = pose;
-    const sitting = pose === 'sit';
+    const sitting = pose === 'sit' || pose === 'tea' || pose === 'read';
     // 앉으면 다리를 앞으로 뻗고 손을 무릎 쪽에 둔다.
     this.legs.forEach((leg) => (leg.rotation.x = sitting ? -Math.PI / 2 : 0));
-    this.arms.forEach((arm) => (arm.rotation.x = sitting ? -0.5 : 0));
+    this.arms.forEach((arm, k) => {
+      arm.rotation.x = sitting ? -0.5 : 0;
+      // 책을 읽을 때는 두 팔을 몸 앞으로 모은다
+      arm.rotation.z = (k === 1 ? 1 : -1) * (pose === 'read' ? -0.12 : ARM_SPREAD);
+    });
+    this.cup.visible = pose === 'tea';
+    this.book.visible = pose === 'read';
     this.upper.position.y = 0;
     this.upper.rotation.z = 0;
+    this.head.rotation.set(0, 0, 0);
   }
 
   /** 자세가 달라졌을 때만 바꾼다 (매 프레임 불러도 된다). */
@@ -168,6 +218,27 @@ export class Character3D {
       this.head.rotation.z = -swing * 0.03;
       // 걸을 때 귀가 한 박자 늦게 따라온다
       this.ears.forEach((ear) => (ear.rotation.x = -0.12 + Math.sin(t * 10 - 0.9) * 0.14));
+    } else if (this.pose === 'tea') {
+      // 5초마다 한 번 찻잔을 입으로 가져가 한 모금 마신다
+      const cycle = t % 5;
+      const sip = cycle < 1.8 ? Math.sin((cycle / 1.8) * Math.PI) ** 2 : 0;
+      this.arms[1].rotation.x = -1.1 - sip * 0.85;
+      this.arms[1].rotation.z = ARM_SPREAD - sip * 0.3;
+      this.head.rotation.x = -sip * 0.16;
+      this.head.rotation.z = (1 - sip) * Math.sin(t * 0.5) * 0.04;
+      this.upper.position.y = Math.sin(t * 2.2) * 0.006;
+      this.ears.forEach((ear, k) => (ear.rotation.x = Math.sin(t * 1.1 + k) * 0.05));
+    } else if (this.pose === 'read') {
+      // 고개를 숙여 책을 보고, 6초마다 책장을 넘긴다
+      const cycle = t % 6;
+      const turn = cycle < 0.9 ? Math.sin((cycle / 0.9) * Math.PI) : 0;
+      this.arms[0].rotation.x = -1.05;
+      this.arms[1].rotation.x = -1.05 - turn * 0.3;
+      this.arms[1].rotation.z = -0.12 - turn * 0.25;
+      this.head.rotation.x = 0.3 + Math.sin(t * 0.6) * 0.03;
+      this.head.rotation.y = Math.sin(t * 0.35) * 0.12;
+      this.upper.position.y = Math.sin(t * 2.2) * 0.006;
+      this.ears.forEach((ear, k) => (ear.rotation.x = Math.sin(t * 0.9 + k) * 0.04));
     } else {
       // 가만히 있을 때는 숨 쉬듯 움직이고, 가끔 고개를 갸웃한다.
       this.upper.position.y = Math.sin(t * 2.2) * 0.008;

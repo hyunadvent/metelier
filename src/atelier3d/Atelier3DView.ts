@@ -1,13 +1,19 @@
 import * as THREE from 'three';
 import type { OutlineEffect } from 'three/addons/effects/OutlineEffect.js';
-import { Character3D } from './Character3D';
+import { Character3D, type Pose3D } from './Character3D';
+import { loadDecor } from './decor';
 import { clampDestination, distanceInsideBox, stepToward, type Ground } from './movement';
-import { buildAtelierRoom, configureRenderer, createOutline, type AtelierRoom, type Hotspot3D } from './room';
+import { buildAtelierRoom, configureRenderer, createOutline, type Activity, type AtelierRoom, type Hotspot3D, type Hotspot3DId } from './room';
 
 /** 걷는 속도 (미터 / 초) */
 const WALK_SPEED = 2.6;
 /** 이만큼(픽셀) 넘게 끌면 누르기가 아니라 둘러보기로 본다. */
 const DRAG_THRESHOLD = 6;
+/** 책장 앞에서 책을 고르는 시간 (초) */
+const BROWSE_TIME = 0.9;
+/** 활동마다 앉은 자세와, 그 자리를 가리키는 표시 */
+const ACTIVITY_POSE: Record<Activity, Pose3D> = { paint: 'sit', tea: 'tea', read: 'read' };
+const ACTIVITY_SPOT: Record<Activity, Hotspot3DId> = { paint: 'stool', tea: 'window', read: 'bookshelf' };
 const CAMERA = {
   minPolar: 0.95,
   maxPolar: 1.42,
@@ -17,7 +23,8 @@ const CAMERA = {
 };
 
 export interface Atelier3DEvents {
-  onSeatedChange(seated: boolean): void;
+  /** 자리를 잡고 하는 활동이 바뀌었을 때. 일어나면 null. */
+  onActivityChange(activity: Activity | null): void;
   /** 의자에 앉은 채로 이젤을 눌렀을 때 */
   onEasel(): void;
   /** 아직 준비 중인 활동을 눌렀을 때 */
@@ -29,6 +36,7 @@ export interface Atelier3DEvents {
  * - 바닥을 누르거나 WASD/방향키로 걷는다.
  * - 화면을 끌면 360도로 둘러보고, 휠로 가까이/멀리 본다. 카메라는 방 밖으로 나가지 않는다.
  * - 의자를 누르면 앉고, 앉아서 이젤을 누르면 색칠을 시작한다.
+ * - 창가를 누르면 방석에 앉아 차를 마시고, 책장을 누르면 책을 골라 방석에 앉아 읽는다.
  */
 export class Atelier3DView {
   private readonly renderer: THREE.WebGLRenderer;
@@ -46,7 +54,9 @@ export class Atelier3DView {
   private position: Ground;
   private target: Ground | null = null;
   private onArrive: (() => void) | null = null;
-  private seated = false;
+  private activity: Activity | null = null;
+  /** 잠시 멈춰 있다가 이어서 할 일 (책장 앞에서 책 고르기) */
+  private wait: { left: number; then: () => void } | null = null;
   private heading = Math.PI;
   private stuckTime = 0;
   private azimuth = 0.22;
@@ -67,7 +77,7 @@ export class Atelier3DView {
     this.outline = createOutline(this.renderer);
     this.scene.background = new THREE.Color(0xf6e7d4);
 
-    this.room = buildAtelierRoom();
+    this.room = buildAtelierRoom(loadDecor());
     this.scene.add(this.room.group, this.character.group);
 
     const canvas = this.renderer.domElement;
@@ -91,8 +101,8 @@ export class Atelier3DView {
     }
 
     if (options.startSeated) {
-      this.position = { ...this.room.stool.approach };
-      this.sitDown();
+      this.position = { ...this.room.seats.paint.approach };
+      this.sitDown('paint');
     } else {
       // 접속하면 방 밖에서 화실로 걸어 들어온다.
       this.position = { ...this.room.entry };
@@ -137,26 +147,34 @@ export class Atelier3DView {
   // ── 행동 ───────────────────────────────────────
 
   private walkTo(target: Ground, onArrive: (() => void) | null = null): void {
-    if (this.seated) this.standUp();
+    if (this.activity) this.standUp();
+    this.wait = null;
     this.target = target;
     this.onArrive = onArrive;
     this.stuckTime = 0;
     this.character.setPose('walk');
   }
 
-  private sitDown(): void {
+  private sitDown(activity: Activity): void {
     this.target = null;
-    this.seated = true;
-    this.heading = this.room.stool.heading; // 이젤을 바라본다
-    this.character.setPose('sit');
-    this.events.onSeatedChange(true);
+    this.activity = activity;
+    this.heading = this.room.seats[activity].heading;
+    this.character.setPose(ACTIVITY_POSE[activity]);
+    this.events.onActivityChange(activity);
   }
 
   private standUp(): void {
-    this.seated = false;
-    this.position = { ...this.room.stool.approach };
+    if (!this.activity) return;
+    this.position = { ...this.room.seats[this.activity].approach };
+    this.activity = null;
     this.character.setPose('idle');
-    this.events.onSeatedChange(false);
+    this.events.onActivityChange(null);
+  }
+
+  /** 활동 자리로 걸어가서 앉는다. */
+  private goSit(activity: Activity): void {
+    if (this.activity === activity) return;
+    this.walkTo(this.room.seats[activity].approach, () => this.sitDown(activity));
   }
 
   private onHotspot(hotspot: Hotspot3D): void {
@@ -164,12 +182,27 @@ export class Atelier3DView {
       this.events.onUnavailable(hotspot);
       return;
     }
-    if (hotspot.id === 'easel' && this.seated) {
-      this.events.onEasel();
-      return;
+    switch (hotspot.id) {
+      case 'easel':
+        // 의자에 앉아 있으면 색칠을 시작하고, 아니면 먼저 의자로 가서 앉는다.
+        if (this.activity === 'paint') this.events.onEasel();
+        else this.goSit('paint');
+        break;
+      case 'stool':
+        this.goSit('paint');
+        break;
+      case 'window':
+        this.goSit('tea');
+        break;
+      case 'bookshelf':
+        if (this.activity === 'read') break;
+        // 책장 앞에서 책을 고른 뒤 방석으로 가서 읽는다.
+        this.walkTo(this.room.bookshelfFront, () => {
+          this.heading = Math.PI / 2; // 책장(+x 쪽)을 바라본다
+          this.wait = { left: BROWSE_TIME, then: () => this.goSit('read') };
+        });
+        break;
     }
-    // 의자를 누르거나, 앉지 않은 채 이젤을 누르면 먼저 의자로 가서 앉는다.
-    if (!this.seated) this.walkTo(this.room.stool.approach, () => this.sitDown());
   }
 
   /** 화면의 한 점 아래에 있는 바닥 위치. 바닥을 가리키지 않으면 null. */
@@ -270,9 +303,10 @@ export class Atelier3DView {
   }
 
   private placeCamera(blend: number): void {
-    const feetY = this.seated ? this.room.stool.seat.y : 0;
-    const focusX = this.seated ? this.room.stool.seat.x : this.position.x;
-    const focusZ = this.seated ? this.room.stool.seat.z : this.position.z;
+    const seat = this.activity ? this.room.seats[this.activity].seat : null;
+    const feetY = seat ? seat.y : 0;
+    const focusX = seat ? seat.x : this.position.x;
+    const focusZ = seat ? seat.z : this.position.z;
     this.lookAt.lerp(new THREE.Vector3(focusX, feetY + 0.9, focusZ), blend);
     // 카메라는 항상 방 안에 둔다: 벽이나 천장에 닿으면 그만큼 캐릭터 쪽으로 당긴다.
     const box = this.room.cameraBox;
@@ -302,9 +336,10 @@ export class Atelier3DView {
     const keyDir = this.keyDirection();
     if (keyDir) {
       // 키보드로 걷는 동안에는 눌러서 정한 목적지를 잊는다.
-      if (this.seated) this.standUp();
+      if (this.activity) this.standUp();
       this.target = null;
       this.onArrive = null;
+      this.wait = null;
       const step = WALK_SPEED * dt;
       const wanted = { x: this.position.x + keyDir.x * step, z: this.position.z + keyDir.z * step };
       this.position = clampDestination(wanted, this.room);
@@ -325,15 +360,22 @@ export class Atelier3DView {
         this.onArrive = null;
         done?.();
       }
-    } else if (!this.seated) {
+    } else if (this.wait) {
+      this.wait.left -= dt;
+      if (this.wait.left <= 0) {
+        const { then } = this.wait;
+        this.wait = null;
+        then();
+      }
+    } else if (!this.activity) {
       this.character.setPoseIfChanged('idle');
     }
 
     this.character.update(dt);
     this.room.update(dt);
     const g = this.character.group;
-    if (this.seated) {
-      const seat = this.room.stool.seat;
+    if (this.activity) {
+      const seat = this.room.seats[this.activity].seat;
       g.position.set(seat.x, seat.y - Character3D.hipHeight, seat.z);
     } else {
       g.position.set(this.position.x, 0, this.position.z);
@@ -354,11 +396,12 @@ export class Atelier3DView {
     const pulse = 1 + 0.1 * Math.sin(this.time * 4);
     for (const { hotspot, el } of this.spots) {
       const p = hotspot.position.clone().project(this.camera);
-      const hidden = p.z > 1 || (hotspot.id === 'stool' && this.seated);
+      // 지금 앉아 있는 자리의 표시는 숨긴다.
+      const hidden = p.z > 1 || (this.activity !== null && hotspot.id === ACTIVITY_SPOT[this.activity]);
       el.style.display = hidden ? 'none' : '';
       if (hidden) continue;
       // 앉아 있으면 이젤이, 서 있으면 의자가 눈에 띄게 움직인다.
-      const emphasized = hotspot.id === (this.seated ? 'easel' : 'stool');
+      const emphasized = this.activity === 'paint' ? hotspot.id === 'easel' : this.activity === null && hotspot.id === 'stool';
       const x = (p.x * 0.5 + 0.5) * width;
       const y = (-p.y * 0.5 + 0.5) * height;
       el.style.transform = `translate(${x}px, ${y}px) translate(-50%, -50%) scale(${emphasized ? pulse : 1})`;

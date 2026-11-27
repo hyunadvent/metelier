@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Atelier3DView } from './Atelier3DView';
+import type { Activity } from './room';
 import '../atelier/atelier.css';
 import './atelier3d.css';
 
@@ -9,10 +10,17 @@ interface Atelier3DScreenProps {
   onStartColoring(): void;
 }
 
+const HINTS: Record<Activity | 'none', string> = {
+  none: '바닥을 누르거나 WASD로 걸어요 · 화면을 끌면 둘러봐요 · 표시를 눌러 보세요',
+  paint: '이젤을 눌러 색칠을 시작하세요',
+  tea: '창밖을 보며 차를 마시고 있어요 · 바닥을 누르면 일어나요',
+  read: '책을 읽고 있어요 · 바닥을 누르면 일어나요',
+};
+
 export function Atelier3DScreen({ startSeated, onStartColoring }: Atelier3DScreenProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const startRef = useRef(onStartColoring);
-  const [seated, setSeated] = useState(startSeated);
+  const [activity, setActivity] = useState<Activity | null>(startSeated ? 'paint' : null);
   const [toast, setToast] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -28,7 +36,7 @@ export function Atelier3DScreen({ startSeated, onStartColoring }: Atelier3DScree
       view = new Atelier3DView(
         host,
         {
-          onSeatedChange: setSeated,
+          onActivityChange: setActivity,
           onEasel: () => startRef.current(),
           onUnavailable: (hotspot) => setToast(`"${hotspot.label}"는 곧 만나요`),
         },
@@ -48,7 +56,7 @@ export function Atelier3DScreen({ startSeated, onStartColoring }: Atelier3DScree
   }, [toast]);
 
   return (
-    <div className="atelier atelier3d" data-seated={seated}>
+    <div className="atelier atelier3d" data-seated={activity === 'paint'} data-activity={activity ?? 'none'}>
       <div className="atelier__canvas" ref={hostRef} />
       <header className="atelier__top">
         <div className="atelier__pill">Metelier</div>
@@ -56,9 +64,7 @@ export function Atelier3DScreen({ startSeated, onStartColoring }: Atelier3DScree
       {error && <p className="atelier__message">{error}</p>}
       {!error && (
         <p className="atelier__hint">
-          {seated
-            ? '이젤을 눌러 색칠을 시작하세요'
-            : '바닥을 누르거나 WASD로 걸어요 · 화면을 끌면 둘러봐요 · 의자를 눌러 앉아 보세요'}
+          {HINTS[activity ?? 'none']}
         </p>
       )}
       {toast && <p className="atelier__toast">{toast}</p>}

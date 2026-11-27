@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { OutlineEffect } from 'three/addons/effects/OutlineEffect.js';
+import { DEFAULT_DECOR, type AtelierDecor, type PictureRef, type PictureSlot } from './decor';
 import type { Box3D, Ground, WalkArea } from './movement';
 import { curtainGeometry, lathe, roundedBox, smoothProfile } from './shapes';
 import {
@@ -18,6 +19,19 @@ import {
 } from './textures';
 
 export type Hotspot3DId = 'easel' | 'stool' | 'window' | 'bookshelf';
+
+/** 캐릭터가 자리를 잡고 하는 활동: 그림 그리기, 차 마시기, 책 읽기 */
+export type Activity = 'paint' | 'tea' | 'read';
+
+/** 활동을 하는 자리 */
+export interface Seat {
+  /** 앉기 전에 걸어가서 서는 자리 */
+  approach: Ground;
+  /** 앉았을 때 엉덩이가 놓이는 자리 */
+  seat: THREE.Vector3;
+  /** 앉았을 때 바라보는 방향 (y 축 회전) */
+  heading: number;
+}
 
 export interface Hotspot3D {
   id: Hotspot3DId;
@@ -41,12 +55,10 @@ export interface AtelierRoom extends WalkArea {
   /** 입장할 때 걸어 들어오는 출발점과 도착점 */
   entry: Ground;
   spawn: Ground;
-  stool: {
-    approach: Ground;
-    seat: THREE.Vector3;
-    /** 앉았을 때 바라보는 방향 (y 축 회전, 이젤 쪽) */
-    heading: number;
-  };
+  /** 활동별 자리: 이젤 앞 의자, 창가 방석, 책장 옆 방석 */
+  seats: Record<Activity, Seat>;
+  /** 책을 고르러 가서 서는 책장 앞 */
+  bookshelfFront: Ground;
   /** 이젤 위의 캔버스 판. 색칠 화면에서는 이 판 자리에 종이가 겹쳐진다. */
   board: THREE.Mesh;
   /** 캔버스 판의 가로세로 비율을 그림에 맞춘다. */
@@ -100,8 +112,9 @@ const PASTELS = [0x6fb7e9, 0xf48fb1, 0xf9d65c, 0x7cb86a, 0xb388eb, 0xf4a24c, 0x5
  * 기획 참고 이미지(docs/reference/atelier-room.webp)의 화실을 코드로 만든 3D 방.
  * 모양은 도형과 곡면을 조합하고, 텍스처는 캔버스에 그려서 만든다.
  * 실제 3D 모델(GLB)이 준비되면 소품별로 모델을 불러오도록 바꾸면 된다.
+ * @param decor 꾸민 상태. 같은 값을 주면 화실 화면과 색칠 화면 배경이 똑같이 그려진다.
  */
-export function buildAtelierRoom(): AtelierRoom {
+export function buildAtelierRoom(decor: AtelierDecor = DEFAULT_DECOR): AtelierRoom {
   const group = new THREE.Group();
   const disposables: { dispose(): void }[] = [];
   const materials = new Map<string, THREE.Material>();
@@ -430,10 +443,33 @@ export function buildAtelierRoom(): AtelierRoom {
   vine(-0.42, shelfY, back + 0.33, 0.62);
   vine(-3.9, shelfY + 0.2, back + 0.3, 0.95);
   // 선반 아래: 풍경화 두 점과 꽃 그림 두 점
-  frame(-3.78, 1.72, back, 0.3, 0.86, landscapePainting(3, false));
-  frame(-2.5, 1.72, back, 1.55, 1.0, landscapePainting(8));
-  frame(-1.2, 2.02, back, 0.4, 0.52, flowerPainting('#f9c5d8', 2));
-  frame(-1.2, 1.36, back, 0.4, 0.52, flowerPainting('#f48fb1', 9));
+  /** 액자에 걸 그림의 텍스처 */
+  const pictureTexture = (ref: PictureRef): THREE.Texture => {
+    if (ref.kind === 'painting') {
+      const texture = new THREE.TextureLoader().load(`${import.meta.env.BASE_URL}paintings/${ref.paintingId}/reference.png`);
+      texture.colorSpace = THREE.SRGBColorSpace;
+      return texture;
+    }
+    switch (ref.id) {
+      case 'meadow':
+        return landscapePainting(8);
+      case 'hills':
+        return landscapePainting(3, false);
+      case 'pink-flowers':
+        return flowerPainting('#f9c5d8', 2);
+      case 'rose-flowers':
+        return flowerPainting('#f48fb1', 9);
+      case 'lilac-flowers':
+        return flowerPainting('#d9c8ee', 14);
+    }
+  };
+  /** 그림을 걸 수 있는 자리마다 액자를 만들고, 꾸밈 데이터가 정한 그림을 넣는다. */
+  const hang = (slot: PictureSlot, x: number, y: number, z: number, w: number, h: number, normal: 1 | -1 = 1) =>
+    frame(x, y, z, w, h, pictureTexture(decor.pictures[slot]), normal);
+  hang('back-left', -3.78, 1.72, back, 0.3, 0.86);
+  hang('back-large', -2.5, 1.72, back, 1.55, 1.0);
+  hang('back-small-top', -1.2, 2.02, back, 0.4, 0.52);
+  hang('back-small-bottom', -1.2, 1.36, back, 0.4, 0.52);
 
   // ── 작업 책상 (뒷벽 왼쪽) ──────────────────────
   const desk = addGroup(-2.75, 0, back + 0.48, group);
@@ -663,7 +699,7 @@ export function buildAtelierRoom(): AtelierRoom {
   contact(0.5, back + 0.42, 0.7, 0.7);
 
   // ── 창가 찻상 ──────────────────────────────────
-  const tea = addGroup(2.6, 0, back + 0.72, group);
+  const tea = addGroup(2.15, 0, back + 0.72, group);
   turned([[0, 0.37], [0.37, 0.37], [0.4, 0.395], [0.37, 0.42], [0, 0.42]], mat(WOOD), 0, 0, 0, tea);
   turned([[0.2, 0], [0.19, 0.03], [0.07, 0.09], [0.05, 0.3], [0.1, 0.37], [0, 0.37]], mat(WOOD_DARK), 0, 0, 0, tea);
   // 찻잔과 받침, 찻주전자
@@ -678,7 +714,13 @@ export function buildAtelierRoom(): AtelierRoom {
   handle.rotation.z = Math.PI / 2;
   const spout = cylinder(0.01, 0.018, 0.09, 0xf9c5d8, 0.12, 0.09, 0, pot);
   spout.rotation.z = -0.9;
-  contact(2.6, back + 0.72, 0.9, 0.9);
+  contact(2.15, back + 0.72, 0.9, 0.9);
+  // 찻상 앞 방석: 창을 바라보고 앉는 자리
+  const teaSeat = { x: 2.15, z: back + 1.48 };
+  const zabuton = addGroup(teaSeat.x, 0, teaSeat.z, group);
+  turned(smoothProfile([[0, 0], [0.26, 0.004], [0.34, 0.03], [0.35, 0.07], [0.3, 0.1], [0.1, 0.11], [0, 0.105]]), fabric(0xf9c5d8), 0, 0, 0, zabuton);
+  ball(0.03, 0xe58aa0, 0, 0.105, 0, zabuton).scale.y = 0.4;
+  contact(teaSeat.x, teaSeat.z, 0.9, 0.9);
 
   // ── 책장 (오른쪽 벽) ───────────────────────────
   const shelf = addGroup(halfW - 0.27, 0, -1.65, group);
@@ -769,10 +811,8 @@ export function buildAtelierRoom(): AtelierRoom {
   }
   const apron = add(curtainGeometry(0.36, 0.66, { folds: 2, depth: 0.02 }), keep(new THREE.MeshStandardMaterial({ color: 0xf7b6c8, map: linen, roughness: 1, side: THREE.DoubleSide })), rack);
   apron.position.set(-0.24, 1.75, -0.09);
-  const hung = keep(new THREE.TextureLoader().load(`${import.meta.env.BASE_URL}paintings/hill-house/reference.png`));
-  hung.colorSpace = THREE.SRGBColorSpace;
-  frame(DOOR_X - 1.5, 1.7, front, 0.8, 0.6, hung, -1);
-  frame(DOOR_X - 2.9, 1.7, front, 0.5, 0.66, flowerPainting('#d9c8ee', 14), -1);
+  hang('door-near', DOOR_X - 1.5, 1.7, front, 0.8, 0.6, -1);
+  hang('door-far', DOOR_X - 2.9, 1.7, front, 0.5, 0.66, -1);
 
   // ── 조명 ───────────────────────────────────────
   group.add(new THREE.HemisphereLight(0xfff6e8, 0xe9c9a4, 1.25));
@@ -816,7 +856,7 @@ export function buildAtelierRoom(): AtelierRoom {
       { x: -3.5, z: 1.85, r: 0.5 },
       { x: 0.5, z: back + 0.42, r: 0.4 },
       { x: 1.2, z: back + 0.52, r: 0.5 },
-      { x: 2.6, z: back + 0.72, r: 0.52 },
+      { x: 2.15, z: back + 0.72, r: 0.52 },
       { x: halfW - 0.2, z: -1.65, r: 1.05 },
       { x: 2.95, z: 0.35, r: 0.5 },
     ],
@@ -831,18 +871,34 @@ export function buildAtelierRoom(): AtelierRoom {
     // 문 앞에서 출발해 방 가운데로 걸어 들어온다.
     entry: { x: DOOR_X, z: front - 0.55 },
     spawn: { x: 1.3, z: 1.25 },
-    stool: {
-      approach: { x: stoolAt.x + 0.78, z: stoolAt.z + 0.3 },
-      seat: new THREE.Vector3(stoolAt.x, 0.6, stoolAt.z),
-      heading: EASEL.turn + Math.PI,
+    seats: {
+      // 이젤 앞 의자: 캔버스를 바라본다
+      paint: {
+        approach: { x: stoolAt.x + 0.78, z: stoolAt.z + 0.3 },
+        seat: new THREE.Vector3(stoolAt.x, 0.6, stoolAt.z),
+        heading: EASEL.turn + Math.PI,
+      },
+      // 창가 방석: 찻상 너머 창밖을 바라본다
+      tea: {
+        approach: { x: teaSeat.x - 0.2, z: teaSeat.z + 0.65 },
+        seat: new THREE.Vector3(teaSeat.x, 0.11, teaSeat.z),
+        heading: Math.PI,
+      },
+      // 책장 옆 노란 방석: 방 안쪽을 바라본다
+      read: {
+        approach: { x: 2.2, z: 0.75 },
+        seat: new THREE.Vector3(2.95, 0.29, 0.35),
+        heading: -Math.PI / 2 - 0.35,
+      },
     },
+    bookshelfFront: { x: halfW - 1.3, z: -1.25 },
     board,
     setBoardAspect,
     hotspots: [
       { id: 'easel', label: '이젤', icon: '🎨', position: new THREE.Vector3(EASEL.x, 2.12, EASEL.z), available: true },
       { id: 'stool', label: '의자', icon: '🪑', position: new THREE.Vector3(stoolAt.x, 0.9, stoolAt.z), available: true },
-      { id: 'window', label: '창가에서 차 마시기', icon: '☕', position: new THREE.Vector3(2.6, 0.95, back + 0.72), available: false },
-      { id: 'bookshelf', label: '책 읽기', icon: '📖', position: new THREE.Vector3(halfW - 0.55, 1.75, -1.65), available: false },
+      { id: 'window', label: '창가에서 차 마시기', icon: '☕', position: new THREE.Vector3(2.15, 0.95, back + 0.72), available: true },
+      { id: 'bookshelf', label: '책 읽기', icon: '📖', position: new THREE.Vector3(halfW - 0.55, 1.75, -1.65), available: true },
     ],
     update(dt: number) {
       time += dt;
