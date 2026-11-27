@@ -93,7 +93,7 @@ export function createOutline(renderer: THREE.WebGLRenderer): OutlineEffect {
 }
 
 // 방 크기. 뒤쪽(-z)에 창문 벽이, 앞쪽(+z)에 문이 있는 벽이 있다.
-const ROOM = { halfW: 4, back: -3, front: 6, height: 3.3 };
+const ROOM = { halfW: 4, back: -3, front: 7.5, height: 3.3 };
 const WINDOW = { x0: 0.25, x1: 3.6, y0: 0.72, y1: 2.98 };
 const EASEL = { x: -0.35, z: -1.55, turn: 0.24 };
 const BOARD_HEIGHT = 0.78;

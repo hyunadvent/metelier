@@ -29,7 +29,11 @@ const CAMERA = {
   maxPolar: 1.42,
   minDistance: 2.4,
   /** 가장 멀리서 본 거리. 이보다 멀어지지 않고, 벽이나 천장에 닿으면 더 가까워진다. */
-  maxDistance: 5.3,
+  maxDistance: 6.5,
+  /** 처음 접속했을 때의 거리 */
+  startDistance: 5.3,
+  /** 활동 시점으로 옮겨 가거나 돌아올 때의 빠르기. 클수록 빠르다. */
+  glideSpeed: 3.15,
 };
 
 export interface Atelier3DEvents {
@@ -75,7 +79,7 @@ export class Atelier3DView {
   private stuckTime = 0;
   private azimuth = 0.22;
   private polar = 1.2;
-  private distance = CAMERA.maxDistance;
+  private distance = CAMERA.startDistance;
   private drag: { id: number; x: number; y: number; moved: boolean } | null = null;
   private frame = 0;
   private lastTime = performance.now();
@@ -414,7 +418,7 @@ export class Atelier3DView {
       const { pose, arrived } = approachCamera(
         { azimuth: this.azimuth, polar: this.polar, distance: this.distance },
         this.cameraGoal,
-        1 - Math.exp(-dt * 4.5),
+        1 - Math.exp(-dt * CAMERA.glideSpeed),
       );
       this.azimuth = pose.azimuth;
       this.polar = pose.polar;
