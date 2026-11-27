@@ -26,12 +26,12 @@ export type PhotoLevel = keyof typeof PHOTO_LEVELS;
 
 interface PhotoDialogProps {
   onClose(): void;
-  /** 그림을 저장하고 색칠을 시작할 때 */
-  onStart(paintingId: string): void;
+  /** 그림을 등록(저장)했을 때. 칠할 그림은 이젤에서 고른다. */
+  onSaved(title: string): void;
 }
 
 /** 화실의 카메라를 눌렀을 때 열리는 창: 사진을 골라 색칠 그림으로 바꾼다. */
-export function PhotoDialog({ onClose, onStart }: PhotoDialogProps) {
+export function PhotoDialog({ onClose, onSaved }: PhotoDialogProps) {
   const [photo, setPhoto] = useState<Photo | null>(null);
   const [level, setLevel] = useState<PhotoLevel>('normal');
   const [stage, setStage] = useState<PhotoStage | 'read' | 'pack' | null>(null);
@@ -84,12 +84,12 @@ export function PhotoDialog({ onClose, onStart }: PhotoDialogProps) {
     };
   }, [photo, level]);
 
-  const start = async () => {
+  const register = async () => {
     if (!result || saving) return;
     setSaving(true);
     try {
       await storePhotoPainting(result);
-      onStart(result.id);
+      onSaved(result.title);
     } catch {
       setSaving(false);
       setError('그림을 저장하지 못했습니다. 브라우저의 저장 공간이 부족할 수 있습니다.');
@@ -164,8 +164,8 @@ export function PhotoDialog({ onClose, onStart }: PhotoDialogProps) {
               다른 사진
               <input type="file" accept="image/*" disabled={busy || saving} onChange={(e) => void choose(e.target.files?.[0])} />
             </label>
-            <button className="photo-dialog__button photo-dialog__button--primary" data-testid="photo-start" disabled={!result || busy || saving} onClick={() => void start()}>
-              이 그림 색칠하기
+            <button className="photo-dialog__button photo-dialog__button--primary" data-testid="photo-register" disabled={!result || busy || saving} onClick={() => void register()}>
+              그림 등록하기
             </button>
           </div>
         )}

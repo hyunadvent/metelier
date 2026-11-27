@@ -91,7 +91,7 @@ export function Atelier3DScreen({ startSeated, onStartColoring }: Atelier3DScree
 
   useEffect(() => {
     if (!toast) return;
-    const timer = window.setTimeout(() => setToast(null), 1800);
+    const timer = window.setTimeout(() => setToast(null), toast.length > 24 ? 3200 : 1800);
     return () => window.clearTimeout(timer);
   }, [toast]);
 
@@ -129,7 +129,15 @@ export function Atelier3DScreen({ startSeated, onStartColoring }: Atelier3DScree
           </button>
         </div>
       )}
-      {photoOpen && <PhotoDialog onClose={() => setPhotoOpen(false)} onStart={(id) => onStartColoring(id)} />}
+      {photoOpen && (
+        <PhotoDialog
+          onClose={() => setPhotoOpen(false)}
+          onSaved={(title) => {
+            setPhotoOpen(false);
+            setToast(`"${title}" 그림을 등록했어요 · 이젤에서 골라 칠해 보세요`);
+          }}
+        />
+      )}
       {choices && (
         <PaintingPicker
           builtin={BUILTIN_PAINTING}
