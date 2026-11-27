@@ -203,10 +203,11 @@ export function buildAtelierRoom(decor: AtelierDecor = DEFAULT_DECOR): AtelierRo
   const plant = (x: number, y: number, z: number, s: number, parent?: THREE.Object3D, leaves = 16) => {
     const g = addGroup(x, y, z, parent ?? group);
     turned(
-      [[0, 0], [0.17 * s, 0], [0.2 * s, 0.03 * s], [0.25 * s, 0.34 * s], [0.27 * s, 0.38 * s], [0.24 * s, 0.4 * s], [0.22 * s, 0.36 * s], [0, 0.36 * s]],
+      [[0, 0], [0.17 * s, 0], [0.2 * s, 0.03 * s], [0.25 * s, 0.34 * s], [0.27 * s, 0.38 * s], [0.24 * s, 0.4 * s], [0.22 * s, 0.3 * s], [0, 0.3 * s]],
       mat(0xf7f3ec, { roughness: 0.6 }),
       0, 0, 0, g,
     );
+    // 흙: 화분 안쪽 바닥보다 위에 떠 있어 겹치지 않는다
     cylinder(0.21 * s, 0.21 * s, 0.02 * s, 0x7a5a3f, 0, 0.35 * s, 0, g).castShadow = false;
     for (let k = 0; k < leaves; k++) {
       const ring = k / leaves;
@@ -706,8 +707,9 @@ export function buildAtelierRoom(decor: AtelierDecor = DEFAULT_DECOR): AtelierRo
     [0.25 * s, 0.34 * s],
     [0.27 * s, 0.38 * s],
     [0.24 * s, 0.4 * s],
-    [0.22 * s, 0.36 * s],
-    [0, 0.36 * s],
+    // 안쪽 바닥은 흙보다 아래에 둔다 (같은 높이면 두 면이 겹쳐 깜빡인다)
+    [0.22 * s, 0.3 * s],
+    [0, 0.3 * s],
   ];
   const growPlant = (kind: PlantKind) => {
     standPlant.clear();
