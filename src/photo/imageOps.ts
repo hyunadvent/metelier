@@ -570,13 +570,23 @@ export function mergeWeakBorders(
     }
     return id;
   };
+  // 무리마다 들어 있는 색 묶음들. 두 무리를 합칠 때는 양쪽의 모든 색이 서로 가까워야 한다.
+  // 이웃끼리만 보면 "분홍 → 연분홍 → 아주 연한 분홍 → 흰색" 처럼 조금씩 다른 색이 사슬로 이어져
+  // 분홍 붓질이 흰 바탕에 통째로 먹힌다.
+  const groupLabels = new Map<number, number[]>();
+  const labelsOf = (root: number) => groupLabels.get(root) ?? [labelOf[root]];
   let merged = 0;
   for (const [, a, b] of weak) {
     if (colorDistance(labelOf[a], labelOf[b]) > maxColorDistance) continue;
     const ra = find(a);
     const rb = find(b);
     if (ra === rb) continue;
+    const la = labelsOf(ra);
+    const lb = labelsOf(rb);
+    if (la.some((x) => lb.some((y) => x !== y && colorDistance(x, y) > maxColorDistance))) continue;
     parent[rb] = ra;
+    groupLabels.set(ra, [...new Set([...la, ...lb])]);
+    groupLabels.delete(rb);
     merged++;
   }
   if (merged === 0) return 0;

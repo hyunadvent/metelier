@@ -433,3 +433,50 @@ describe('같은 색 사이의 윤곽', () => {
     expect(p.assignment[disc - 1]).toBe(p.assignment[floor - 1]);
   });
 });
+
+describe('물감 색은 원본 그림의 색을 지킨다', () => {
+  const hex = (color: string) => [1, 3, 5].map((o) => parseInt(color.slice(o, o + 2), 16));
+  const colorAt = (p: Awaited<ReturnType<typeof photoToPainting>>, x: number, y: number) => {
+    const id = p.seg.ids[y * 2 * p.width + x * 2];
+    expect(id).toBeGreaterThan(0);
+    return hex(p.palette.find((e) => e.number === p.assignment[id - 1])!.color);
+  };
+  const options = { colors: 8, maxRegions: 60, outputSize: 600, workSize: 300, smoothing: 3, faceLines: false, thinLines: true, edgeMerge: 0.7, contours: 1 };
+
+  it('굵은 검은 테두리 안의 연노랑은 테두리 색에 섞여 탁해지지 않는다', async () => {
+    const w = 300;
+    const h = 240;
+    const YELLOW = [255, 255, 173];
+    const rgba = new Uint8ClampedArray(w * h * 4);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const d = Math.hypot(x - 150, y - 120);
+        const color = d < 70 ? YELLOW : d < 76 ? [0, 0, 0] : [255, 255, 255];
+        rgba.set([...color, 255], (y * w + x) * 4);
+      }
+    }
+    const p = await photoToPainting(rgba, w, h, options);
+    const got = colorAt(p, 150, 120);
+    for (let c = 0; c < 3; c++) expect(Math.abs(got[c] - YELLOW[c])).toBeLessThanOrEqual(4);
+  });
+
+  it('흰 바탕에 가장자리가 번진 연분홍 붓질은 흰 바탕에 합쳐지지 않는다', async () => {
+    const w = 300;
+    const h = 240;
+    const PINK = [255, 229, 252];
+    const rgba = new Uint8ClampedArray(w * h * 4);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        // 가운데는 연분홍, 바깥으로 갈수록 서서히 흰색이 된다
+        const t = Math.min(1, Math.max(0, (Math.hypot((x - 150) / 1.3, y - 120) - 60) / 40));
+        const color = PINK.map((v) => Math.round(v + (255 - v) * t));
+        rgba.set([...color, 255], (y * w + x) * 4);
+      }
+    }
+    const p = await photoToPainting(rgba, w, h, options);
+    const pink = colorAt(p, 150, 120);
+    const white = colorAt(p, 5, 5);
+    for (let c = 0; c < 3; c++) expect(Math.abs(pink[c] - PINK[c])).toBeLessThanOrEqual(6);
+    expect(white).toEqual([255, 255, 255]);
+  });
+});

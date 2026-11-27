@@ -52,6 +52,8 @@ export interface PhotoOptions {
 
 /** 윤곽선이 지나가는 자리를 나타내는 색 묶음 번호. 물감 묶음(0..251)과 겹치지 않는다. */
 const LINE = 255;
+/** 경계가 흐려도 이보다 색조가 다른 두 칸은 합치지 않는다 (가중한 Lab 의 a, b 거리) */
+const MAX_MERGE_HUE = 14;
 
 export const DEFAULT_PHOTO_OPTIONS: PhotoOptions = {
   colors: 14,
@@ -230,6 +232,13 @@ export async function photoToPainting(
     centers[c + 2] += lab[i * 3 + 2];
     centers[c + 3]++;
   }
+  /** 두 묶음의 색조(밝기를 뺀 색) 차이. 조명 때문에 생긴 명암은 밝기만 다르고, 다른 물건은 색조가 다르다. */
+  const hueDistance = (a: number, b: number) => {
+    if (a === LINE || b === LINE) return 90;
+    const na = centers[a * 4 + 3] || 1;
+    const nb = centers[b * 4 + 3] || 1;
+    return Math.hypot(centers[a * 4 + 1] / na - centers[b * 4 + 1] / nb, centers[a * 4 + 2] / na - centers[b * 4 + 2] / nb);
+  };
   const colorDistance = (a: number, b: number) => {
     // 윤곽선은 어느 물감 색과도 멀다고 본다: 작은 칸이 선이 아니라 색이 있는 이웃에 합쳐지게 한다
     if (a === LINE || b === LINE) return 90;
@@ -318,7 +327,9 @@ export async function photoToPainting(
       return edges[sy * width + sx];
     };
     for (let round = 0; round < 3; round++) {
-      if (mergeWeakBorders(big, out.width, out.height, comp, strengthAt, options.edgeMerge, colorDistance, 45) === 0) break;
+      // 연분홍 붓질과 흰 바탕처럼 경계가 번져 있어도 색조가 다르면 다른 칸으로 둔다
+      const mergeDistance = (a: number, b: number) => (hueDistance(a, b) > MAX_MERGE_HUE ? 999 : colorDistance(a, b));
+      if (mergeWeakBorders(big, out.width, out.height, comp, strengthAt, options.edgeMerge, mergeDistance, 45) === 0) break;
       comp = components(big, out.width, out.height);
     }
     // 합친 뒤 남은 경계의 잔물결을 한 번 더 다듬는다
@@ -450,19 +461,43 @@ export async function photoToPainting(
   const seg: Segmentation = { ids, count: labelOfRegion.length - 1 };
   const regions = describeRegions(seg, out.width, out.height, darkness, 128);
 
-  // 묶음마다의 색: 다듬은 사진에서 그 묶음에 속한 픽셀들의 평균. 원본의 색을 그대로 따른다.
+  // 묶음마다의 색. 칸 전체의 평균을 내면, 칸에 메워 넣은 검은 테두리 선과 경계의 번진 색이 섞여 색이 탁해진다.
+  // 그래서 "원래 그 색 묶음으로 분류된 픽셀" 만 모아, 원본 사진에서 채널마다 가운데 값을 쓴다.
+  // 가운데 값은 테두리 근처의 어두운 픽셀이 조금 섞여 있어도 흔들리지 않는다.
   const sums = new Float64Array(groups * 4);
+  const hist = new Uint32Array(groups * 3 * 256);
+  const pure = new Float64Array(groups);
   for (let y = 0; y < out.height; y++) {
     const sy = Math.min(height - 1, Math.floor(((y + 0.5) * height) / out.height));
     for (let x = 0; x < out.width; x++) {
       const sx = Math.min(width - 1, Math.floor(((x + 0.5) * width) / out.width));
       const label = big[y * out.width + x];
       if (label === LINE) continue;
-      const o = (sy * width + sx) * 4;
+      const si = sy * width + sx;
+      const o = si * 4;
       sums[label * 4] += smoothed[o];
       sums[label * 4 + 1] += smoothed[o + 1];
       sums[label * 4 + 2] += smoothed[o + 2];
       sums[label * 4 + 3]++;
+      const own = label === SKIN ? skin !== null && skin[si] === 1 : rough[si] === label;
+      if (!own || (thin && thin[si] > 0.1)) continue;
+      pure[label]++;
+      const h = label * 768;
+      hist[h + rgba[o]]++;
+      hist[h + 256 + rgba[o + 1]]++;
+      hist[h + 512 + rgba[o + 2]]++;
+    }
+  }
+  for (let label = 0; label < groups; label++) {
+    // 원래 그 색이던 픽셀이 너무 적으면 (다른 묶음에 거의 다 먹힌 경우) 평균을 그대로 쓴다
+    const n = pure[label];
+    if (n < Math.max(16, sums[label * 4 + 3] * 0.05)) continue;
+    for (let c = 0; c < 3; c++) {
+      const h = label * 768 + c * 256;
+      let seen = 0;
+      let v = 0;
+      while (v < 255 && seen + hist[h + v] <= n / 2) seen += hist[h + v++];
+      sums[label * 4 + c] = v * sums[label * 4 + 3];
     }
   }
   // 쓰이는 묶음에만 번호를 매긴다. 넓게 쓰이는 색이 앞 번호다.
