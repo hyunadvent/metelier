@@ -1,5 +1,21 @@
 import * as THREE from 'three';
+import { OutlineEffect } from 'three/addons/effects/OutlineEffect.js';
 import type { Box3D, Ground, WalkArea } from './movement';
+import { curtainGeometry, lathe, roundedBox, smoothProfile } from './shapes';
+import {
+  bookSpineTexture,
+  edgeShadeTexture,
+  flowerPainting,
+  landscapePainting,
+  linenTexture,
+  petalTexture,
+  plasterTexture,
+  radialTexture,
+  rugTexture,
+  seededRandom,
+  skyTexture,
+  woodFloorTexture,
+} from './textures';
 
 export type Hotspot3DId = 'easel' | 'stool' | 'window' | 'bookshelf';
 
@@ -36,7 +52,32 @@ export interface AtelierRoom extends WalkArea {
   /** 캔버스 판의 가로세로 비율을 그림에 맞춘다. */
   setBoardAspect(aspect: number): void;
   hotspots: Hotspot3D[];
+  /** 움직이는 것(창밖 꽃잎, 등불의 흔들림)을 한 프레임만큼 진행한다. */
+  update(dt: number): void;
   dispose(): void;
+}
+
+/** 외곽선을 그리지 않을 재질로 표시한다 (투명한 것, 빛 번짐, 그림자 얼룩처럼 형태가 없는 것). */
+function noOutline<T extends THREE.Material>(material: T): T {
+  material.userData.outlineParameters = { visible: false };
+  return material;
+}
+
+/** 화실을 그리는 렌더러의 공통 설정: 부드러운 그림자와, 밝은 곳이 하얗게 날아가지 않는 색 처리 */
+export function configureRenderer(renderer: THREE.WebGLRenderer): void {
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.VSMShadowMap;
+  renderer.toneMapping = THREE.NeutralToneMapping;
+  renderer.toneMappingExposure = 1.08;
+}
+
+/**
+ * 물체 둘레에 가는 갈색 선을 두르는 효과. 색칠 그림의 선화와 어울리는 일러스트 느낌을 낸다.
+ * renderer.render 대신 이 효과의 render 로 그린다.
+ */
+export function createOutline(renderer: THREE.WebGLRenderer): OutlineEffect {
+  return new OutlineEffect(renderer, { defaultThickness: 0.0022, defaultColor: [0.42, 0.3, 0.22], defaultAlpha: 0.85 });
 }
 
 // 방 크기. 뒤쪽(-z)에 창문 벽이, 앞쪽(+z)에 문이 있는 벽이 있다.
@@ -50,304 +91,504 @@ const DOOR_X = 1.4;
 const WOOD = 0xd9a56c;
 const WOOD_DARK = 0xb9793f;
 const WOOD_LIGHT = 0xe9bf8c;
-const WALL = 0xfdf0dd;
 const CREAM = 0xfff6ea;
-const GREEN = 0x7cb86a;
+const LEAF = [0x7cb86a, 0x8fc97c, 0x6aa85a, 0x9bd08a];
+const BLOSSOM = [0xf9c5d8, 0xfbd3e1, 0xf7b3cc, 0xfde0ea];
 const PASTELS = [0x6fb7e9, 0xf48fb1, 0xf9d65c, 0x7cb86a, 0xb388eb, 0xf4a24c, 0x5cc8b8, 0xfff8e7, 0xf9c5d8, 0x9fc5e8];
 
 /**
- * 기획 참고 이미지(docs/reference/atelier-room.webp)의 화실을 기본 도형으로 옮긴 임시 3D 방.
- * 실제 3D 모델(GLB)이 준비되면 이 함수가 모델을 불러오도록 바꾸면 된다.
+ * 기획 참고 이미지(docs/reference/atelier-room.webp)의 화실을 코드로 만든 3D 방.
+ * 모양은 도형과 곡면을 조합하고, 텍스처는 캔버스에 그려서 만든다.
+ * 실제 3D 모델(GLB)이 준비되면 소품별로 모델을 불러오도록 바꾸면 된다.
  */
 export function buildAtelierRoom(): AtelierRoom {
   const group = new THREE.Group();
-  const geometries: THREE.BufferGeometry[] = [];
+  const disposables: { dispose(): void }[] = [];
   const materials = new Map<string, THREE.Material>();
+  const random = seededRandom(11);
 
+  const keep = <T extends { dispose(): void }>(item: T): T => {
+    disposables.push(item);
+    return item;
+  };
+  /** 같은 색과 설정의 재질은 하나를 함께 쓴다. */
   const mat = (color: number, options: THREE.MeshStandardMaterialParameters = {}): THREE.Material => {
-    const key = `${color}:${JSON.stringify(options)}`;
+    const { map, ...rest } = options;
+    const key = `${color}:${map?.uuid ?? ''}:${JSON.stringify(rest)}`;
     let m = materials.get(key);
     if (!m) {
-      m = new THREE.MeshStandardMaterial({ color, roughness: 0.85, ...options });
+      m = keep(new THREE.MeshStandardMaterial({ color, roughness: 0.82, ...options }));
       materials.set(key, m);
     }
     return m;
   };
   const add = (geometry: THREE.BufferGeometry, material: THREE.Material, parent: THREE.Object3D = group): THREE.Mesh => {
-    geometries.push(geometry);
+    keep(geometry);
     const mesh = new THREE.Mesh(geometry, material);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     parent.add(mesh);
     return mesh;
   };
-  const box = (w: number, h: number, d: number, color: number, x: number, y: number, z: number, parent?: THREE.Object3D) => {
-    const mesh = add(new THREE.BoxGeometry(w, h, d), mat(color), parent);
-    mesh.position.set(x, y, z);
-    return mesh;
+  const at = <T extends THREE.Object3D>(object: T, x: number, y: number, z: number): T => {
+    object.position.set(x, y, z);
+    return object;
   };
-  const cylinder = (rTop: number, rBottom: number, h: number, color: number, x: number, y: number, z: number, parent?: THREE.Object3D) => {
-    const mesh = add(new THREE.CylinderGeometry(rTop, rBottom, h, 24), mat(color), parent);
-    mesh.position.set(x, y, z);
-    return mesh;
-  };
-  const ball = (r: number, color: number, x: number, y: number, z: number, parent?: THREE.Object3D) => {
-    const mesh = add(new THREE.SphereGeometry(r, 18, 12), mat(color), parent);
-    mesh.position.set(x, y, z);
-    return mesh;
-  };
-  const sub = (x: number, y: number, z: number, parent: THREE.Object3D = group) => {
-    const g = new THREE.Group();
-    g.position.set(x, y, z);
+  /** 모서리가 둥근 상자 */
+  const box = (w: number, h: number, d: number, color: number, x: number, y: number, z: number, parent?: THREE.Object3D, radius = 0.015) =>
+    at(add(roundedBox(w, h, d, radius), mat(color), parent), x, y, z);
+  const cylinder = (rTop: number, rBottom: number, h: number, color: number, x: number, y: number, z: number, parent?: THREE.Object3D) =>
+    at(add(new THREE.CylinderGeometry(rTop, rBottom, h, 24), mat(color), parent), x, y, z);
+  const ball = (r: number, color: number, x: number, y: number, z: number, parent?: THREE.Object3D) =>
+    at(add(new THREE.SphereGeometry(r, 18, 12), mat(color), parent), x, y, z);
+  /** 단면을 돌려 만든 둥근 물건 */
+  const turned = (profile: [number, number][], material: THREE.Material, x: number, y: number, z: number, parent?: THREE.Object3D) =>
+    at(add(lathe(profile), material, parent), x, y, z);
+  function addGroup(x: number, y: number, z: number, parent: THREE.Object3D): THREE.Group {
+    const g = at(new THREE.Group(), x, y, z);
     parent.add(g);
     return g;
+  }
+
+  // ── 텍스처 ─────────────────────────────────────
+  const { halfW, back, front, height } = ROOM;
+  const depth = front - back;
+  const midZ = (front + back) / 2;
+  const floorTex = keep(woodFloorTexture(halfW, depth / 4.5));
+  const wallTex = keep(plasterTexture(3, 1.2));
+  const sideWallTex = keep(plasterTexture(3.4, 1.2));
+  const linen = keep(linenTexture(6));
+  const spine = keep(bookSpineTexture());
+  const shade = keep(edgeShadeTexture());
+  const blob = keep(radialTexture('rgba(90, 55, 25, 0.42)', 'rgba(90, 55, 25, 0)'));
+  const wallMat = mat(0xffffff, { map: wallTex, roughness: 0.95 });
+  const sideWallMat = mat(0xffffff, { map: sideWallTex, roughness: 0.95 });
+  const fabric = (color: number) => mat(color, { map: linen, roughness: 1 });
+
+  /** 바닥에 깔리는 부드러운 그림자: 가구가 바닥에 붙어 보이게 한다. */
+  const shadeMat = noOutline(keep(new THREE.MeshBasicMaterial({ map: blob, transparent: true, depthWrite: false })));
+  const contact = (x: number, z: number, w: number, d: number, y = 0.021) => {
+    const plane = new THREE.Mesh(keep(new THREE.PlaneGeometry(w, d)), shadeMat);
+    plane.rotation.x = -Math.PI / 2;
+    plane.position.set(x, y, z);
+    plane.renderOrder = 1;
+    group.add(plane);
   };
-  /** 화분: 흰 화분에 둥근 잎 덩어리 */
-  const plant = (x: number, y: number, z: number, s: number, parent?: THREE.Object3D) => {
-    const g = sub(x, y, z, parent);
-    cylinder(0.26 * s, 0.19 * s, 0.4 * s, 0xf7f3ec, 0, 0.2 * s, 0, g);
-    [
-      [0, 0.72, 0, 0.4],
-      [0.24, 0.92, -0.08, 0.28],
-      [-0.24, 0.86, 0.1, 0.26],
-      [0.05, 1.12, 0.08, 0.24],
-      [-0.12, 0.6, -0.22, 0.24],
-    ].forEach(([px, py, pz, r], k) => ball(r * s, [GREEN, 0x8fc97c, 0x6aa85a][k % 3], px * s, py * s, pz * s, g));
+  /** 벽과 바닥, 벽과 벽이 만나는 구석의 음영 */
+  const edgeMat = noOutline(keep(new THREE.MeshBasicMaterial({ map: shade, transparent: true, depthWrite: false, side: THREE.DoubleSide })));
+  const edge = (w: number, h: number, x: number, y: number, z: number, rx: number, ry: number, rz = 0) => {
+    const plane = new THREE.Mesh(keep(new THREE.PlaneGeometry(w, h)), edgeMat);
+    plane.position.set(x, y, z);
+    plane.rotation.set(rx, ry, rz, 'YXZ');
+    plane.renderOrder = 1;
+    group.add(plane);
+  };
+
+  /** 잎이 달린 화분. 납작한 잎 여러 장을 방사형으로 꽂는다. */
+  const plant = (x: number, y: number, z: number, s: number, parent?: THREE.Object3D, leaves = 16) => {
+    const g = addGroup(x, y, z, parent ?? group);
+    turned(
+      [[0, 0], [0.17 * s, 0], [0.2 * s, 0.03 * s], [0.25 * s, 0.34 * s], [0.27 * s, 0.38 * s], [0.24 * s, 0.4 * s], [0.22 * s, 0.36 * s], [0, 0.36 * s]],
+      mat(0xf7f3ec, { roughness: 0.6 }),
+      0, 0, 0, g,
+    );
+    cylinder(0.21 * s, 0.21 * s, 0.02 * s, 0x7a5a3f, 0, 0.35 * s, 0, g).castShadow = false;
+    for (let k = 0; k < leaves; k++) {
+      const ring = k / leaves;
+      const a = k * 2.4;
+      const lean = 0.25 + ring * 1.05;
+      const len = (0.34 + random() * 0.2) * s;
+      const leaf = add(new THREE.SphereGeometry(1, 10, 8), mat(LEAF[k % LEAF.length]), g);
+      leaf.scale.set(len * 0.42, len, len * 0.1);
+      // 잎의 뿌리 쪽이 화분 가운데에 오도록 기울여 놓는다
+      const pivot = new THREE.Group();
+      pivot.position.set(0, 0.38 * s, 0);
+      pivot.rotation.set(0, a, 0);
+      const arm = new THREE.Group();
+      arm.rotation.x = lean;
+      leaf.position.y = len * 0.95;
+      g.add(pivot);
+      pivot.add(arm);
+      arm.add(leaf);
+    }
     return g;
   };
   /** 아래로 늘어지는 덩굴 */
   const vine = (x: number, y: number, z: number, length: number, parent?: THREE.Object3D) => {
-    for (let k = 0; k * 0.085 < length; k++) {
-      ball(0.045 - k * 0.0012, k % 2 ? 0x8fc97c : 0x6aa85a, x + Math.sin(k * 1.3) * 0.035, y - k * 0.085, z + Math.cos(k * 1.7) * 0.02, parent).castShadow = false;
+    const sway = random() * 6;
+    for (let k = 0; k * 0.075 < length; k++) {
+      const leaf = ball(0.05 - k * 0.0012, LEAF[k % LEAF.length], x + Math.sin(k * 1.3 + sway) * 0.04, y - k * 0.075, z + Math.cos(k * 1.7 + sway) * 0.025, parent);
+      leaf.scale.set(1, 0.7, 0.45);
+      leaf.rotation.z = Math.sin(k * 2.1) * 0.8;
+      leaf.castShadow = false;
     }
   };
-  /** 벽에 건 액자 */
-  const frame = (x: number, y: number, w: number, h: number, colors: number[]) => {
-    box(w + 0.12, h + 0.12, 0.05, WOOD, x, y, back + 0.03);
-    box(w, h, 0.052, colors[0], x, y, back + 0.032);
-    if (colors[1] !== undefined) box(w, h * 0.42, 0.054, colors[1], x, y - h * 0.29, back + 0.033);
-    if (colors[2] !== undefined) ball(Math.min(w, h) * 0.16, colors[2], x + w * 0.12, y - h * 0.05, back + 0.04).scale.z = 0.2;
+  /** 벽에 건 액자. normal 은 그림이 바라보는 방향 (+1: 방 앞쪽, -1: 방 뒤쪽) */
+  const frame = (x: number, y: number, z: number, w: number, h: number, picture: THREE.Texture, normal: 1 | -1 = 1) => {
+    keep(picture);
+    box(w + 0.13, h + 0.13, 0.06, WOOD, x, y, z + normal * 0.03, undefined, 0.02);
+    box(w + 0.04, h + 0.04, 0.062, 0xfffaf2, x, y, z + normal * 0.032, undefined, 0.004);
+    const canvas = add(new THREE.PlaneGeometry(w, h), mat(0xffffff, { map: picture, roughness: 1 }));
+    canvas.castShadow = false;
+    canvas.position.set(x, y, z + normal * 0.065);
+    if (normal < 0) canvas.rotation.y = Math.PI;
   };
 
-  const { halfW, back, front, height } = ROOM;
-  const depth = front - back;
-  const midZ = (front + back) / 2;
-
   // ── 바닥, 벽, 천장 ─────────────────────────────
-  box(halfW * 2, 0.2, depth, 0xe7b583, 0, -0.1, midZ).castShadow = false;
-  for (let k = 1; k < 16; k++) box(0.015, 0.004, depth, 0xcf9b68, -halfW + k * 0.5, 0.002, midZ).castShadow = false;
-  box(halfW * 2 + 0.4, 0.2, depth + 0.4, CREAM, 0, height + 0.1, midZ);
+  const floor = add(new THREE.BoxGeometry(halfW * 2, 0.2, depth), mat(0xffffff, { map: floorTex, roughness: 0.7 }));
+  floor.position.set(0, -0.1, midZ);
+  floor.castShadow = false;
+  at(add(new THREE.BoxGeometry(halfW * 2 + 0.4, 0.2, depth + 0.4), mat(CREAM)), 0, height + 0.1, midZ);
   // 창문이 있는 뒷벽: 창 둘레를 네 조각으로 막는다
   const winW = WINDOW.x1 - WINDOW.x0;
   const winH = WINDOW.y1 - WINDOW.y0;
   const winX = (WINDOW.x0 + WINDOW.x1) / 2;
   const winY = (WINDOW.y0 + WINDOW.y1) / 2;
-  box(WINDOW.x0 + halfW, height, 0.2, WALL, (-halfW + WINDOW.x0) / 2, height / 2, back - 0.1);
-  box(halfW - WINDOW.x1, height, 0.2, WALL, (halfW + WINDOW.x1) / 2, height / 2, back - 0.1);
-  box(winW, WINDOW.y0, 0.2, WALL, winX, WINDOW.y0 / 2, back - 0.1);
-  box(winW, height - WINDOW.y1, 0.2, WALL, winX, (height + WINDOW.y1) / 2, back - 0.1);
-  box(0.2, height, depth + 0.4, WALL, -halfW - 0.1, height / 2, midZ);
-  box(0.2, height, depth + 0.4, WALL, halfW + 0.1, height / 2, midZ);
-  box(halfW * 2, height, 0.2, WALL, 0, height / 2, front + 0.1);
+  const wall = (w: number, h: number, d: number, x: number, y: number, z: number, material = wallMat) =>
+    at(add(new THREE.BoxGeometry(w, h, d), material), x, y, z);
+  wall(WINDOW.x0 + halfW, height, 0.2, (-halfW + WINDOW.x0) / 2, height / 2, back - 0.1);
+  wall(halfW - WINDOW.x1, height, 0.2, (halfW + WINDOW.x1) / 2, height / 2, back - 0.1);
+  wall(winW, WINDOW.y0, 0.2, winX, WINDOW.y0 / 2, back - 0.1);
+  wall(winW, height - WINDOW.y1, 0.2, winX, (height + WINDOW.y1) / 2, back - 0.1);
+  wall(0.2, height, depth + 0.4, -halfW - 0.1, height / 2, midZ, sideWallMat);
+  wall(0.2, height, depth + 0.4, halfW + 0.1, height / 2, midZ, sideWallMat);
+  wall(halfW * 2, height, 0.2, 0, height / 2, front + 0.1);
   // 걸레받이
-  box(WINDOW.x0 + halfW, 0.12, 0.04, WOOD_LIGHT, (-halfW + WINDOW.x0) / 2, 0.06, back + 0.02);
-  box(0.04, 0.12, depth, WOOD_LIGHT, -halfW + 0.02, 0.06, midZ);
-  box(0.04, 0.12, depth, WOOD_LIGHT, halfW - 0.02, 0.06, midZ);
+  box(WINDOW.x0 + halfW, 0.13, 0.04, WOOD_LIGHT, (-halfW + WINDOW.x0) / 2, 0.065, back + 0.02);
+  box(halfW - WINDOW.x1, 0.13, 0.04, WOOD_LIGHT, (halfW + WINDOW.x1) / 2, 0.065, back + 0.02);
+  box(0.04, 0.13, depth, WOOD_LIGHT, -halfW + 0.02, 0.065, midZ);
+  box(0.04, 0.13, depth, WOOD_LIGHT, halfW - 0.02, 0.065, midZ);
+  box(halfW * 2, 0.13, 0.04, WOOD_LIGHT, 0, 0.065, front - 0.02);
+  // 구석의 음영: 바닥 가장자리와 벽 위쪽(천장 밑)
+  const band = 0.6;
+  edge(halfW * 2, band, 0, 0.02, back + band / 2, -Math.PI / 2, 0);
+  edge(halfW * 2, band, 0, 0.02, front - band / 2, -Math.PI / 2, Math.PI);
+  edge(depth, band, -halfW + band / 2, 0.02, midZ, -Math.PI / 2, Math.PI / 2);
+  edge(depth, band, halfW - band / 2, 0.02, midZ, -Math.PI / 2, -Math.PI / 2);
+  edge(halfW * 2, band, 0, height - band / 2, back + 0.012, 0, 0);
+  edge(halfW * 2, band, 0, height - band / 2, front - 0.012, 0, Math.PI);
+  edge(depth, band, -halfW + 0.012, height - band / 2, midZ, 0, Math.PI / 2);
+  edge(depth, band, halfW - 0.012, height - band / 2, midZ, 0, -Math.PI / 2);
 
   // ── 창문, 커튼 ─────────────────────────────────
-  box(winW + 0.24, 0.12, 0.26, WOOD, winX, WINDOW.y1 + 0.04, back - 0.04);
-  box(winW + 0.5, 0.09, 0.44, WOOD, winX, WINDOW.y0 - 0.03, back + 0.06);
-  for (const x of [WINDOW.x0, WINDOW.x1]) box(0.12, winH, 0.14, WOOD, x, winY, back - 0.04);
+  box(winW + 0.26, 0.13, 0.26, WOOD, winX, WINDOW.y1 + 0.045, back - 0.04);
+  box(winW + 0.56, 0.09, 0.46, WOOD, winX, WINDOW.y0 - 0.03, back + 0.07, undefined, 0.03);
+  for (const x of [WINDOW.x0, WINDOW.x1]) box(0.13, winH, 0.14, WOOD, x, winY, back - 0.04);
   box(0.1, winH, 0.12, WOOD, winX, winY, back - 0.04);
   box(winW, 0.08, 0.1, WOOD, winX, WINDOW.y0 + winH * 0.62, back - 0.04);
   for (const x of [WINDOW.x0 + winW * 0.25, WINDOW.x0 + winW * 0.75]) box(0.045, winH, 0.07, WOOD, x, winY, back - 0.04);
-  box(winW + 1.3, 0.05, 0.05, WOOD_DARK, winX, WINDOW.y1 + 0.2, back + 0.2);
-  const sheer = mat(0xfffaf3, { transparent: true, opacity: 0.82, roughness: 1 });
-  // 왼쪽 커튼은 곧게, 오른쪽 커튼은 가운데를 묶었다
-  add(new THREE.BoxGeometry(0.62, winH + 0.75, 0.05), sheer).position.set(WINDOW.x0 - 0.1, winY - 0.18, back + 0.2);
-  add(new THREE.BoxGeometry(0.6, 1.25, 0.05), sheer).position.set(WINDOW.x1 + 0.12, WINDOW.y1 - 0.42, back + 0.2);
-  add(new THREE.BoxGeometry(0.34, 0.3, 0.07), sheer).position.set(WINDOW.x1 + 0.2, 1.62, back + 0.2);
-  add(new THREE.BoxGeometry(0.56, 1.45, 0.05), sheer).position.set(WINDOW.x1 + 0.14, 0.76, back + 0.2);
-  box(0.36, 0.06, 0.09, 0xf9c5d8, WINDOW.x1 + 0.2, 1.62, back + 0.2);
+  // 커튼 봉과 고리
+  cylinder(0.022, 0.022, winW + 1.5, WOOD_DARK, winX, WINDOW.y1 + 0.2, back + 0.2).rotation.z = Math.PI / 2;
+  for (const x of [winX - winW / 2 - 0.75, winX + winW / 2 + 0.75]) ball(0.045, WOOD_DARK, x, WINDOW.y1 + 0.2, back + 0.2);
+  // 얇은 커튼: 햇빛을 막지 않도록 그림자는 드리우지 않는다
+  const sheer = noOutline(
+    keep(new THREE.MeshStandardMaterial({ color: 0xfffaf3, map: linen, transparent: true, opacity: 0.86, roughness: 1, side: THREE.DoubleSide })),
+  );
+  const curtainTop = WINDOW.y1 + 0.18;
+  const leftCurtain = add(curtainGeometry(0.8, curtainTop - 0.06, { folds: 5, depth: 0.045 }), sheer);
+  leftCurtain.position.set(WINDOW.x0 - 0.12, curtainTop, back + 0.2);
+  leftCurtain.castShadow = false;
+  const rightCurtain = add(curtainGeometry(0.85, curtainTop - 0.06, { folds: 5, depth: 0.045, tieAt: 0.5, tieWidth: 0.34, tieSide: 1 }), sheer);
+  rightCurtain.position.set(WINDOW.x1 + 0.08, curtainTop, back + 0.2);
+  rightCurtain.castShadow = false;
+  box(0.36, 0.06, 0.12, 0xf9c5d8, WINDOW.x1 + 0.32, curtainTop * 0.5 + 0.03, back + 0.2, undefined, 0.02);
 
   // ── 창밖: 하늘, 언덕, 벚나무 ───────────────────
-  const sky = add(new THREE.PlaneGeometry(90, 50), new THREE.MeshBasicMaterial({ color: 0x8ecbf3 }));
-  materials.set('sky', sky.material as THREE.Material);
-  sky.position.set(winX, 8, back - 22);
-  sky.castShadow = sky.receiveShadow = false;
-  const outside = (m: THREE.Mesh) => {
+  const outside = <T extends THREE.Mesh>(m: T): T => {
+    noOutline(m.material as THREE.Material);
     m.castShadow = false;
     m.receiveShadow = false;
     return m;
   };
-  outside(box(90, 0.4, 24, 0xbfe3a8, winX, -0.4, back - 11.5));
+  const sky = outside(add(new THREE.PlaneGeometry(110, 46), noOutline(keep(new THREE.MeshBasicMaterial({ map: keep(skyTexture()), toneMapped: false })))));
+  sky.position.set(winX, 14, back - 26);
+  outside(at(add(new THREE.BoxGeometry(110, 0.4, 30), mat(0xbfe3a8)), winX, -0.4, back - 14.5));
   outside(ball(7, 0xcdeab2, winX - 6, -4.2, back - 14));
   outside(ball(9, 0xb7dd9e, winX + 8, -5.6, back - 16));
+  outside(ball(12, 0xc6e6ad, winX - 1, -9.2, back - 22));
   [
-    [-1.6, -3.4, 1.0],
-    [0.9, -4.6, 1.25],
-    [3.1, -3.6, 0.95],
-    [-4.2, -6.5, 1.2],
-    [5.6, -6.0, 1.3],
+    [-1.6, -3.6, 1.0],
+    [0.9, -4.8, 1.25],
+    [3.2, -3.8, 0.95],
+    [-4.4, -6.5, 1.2],
+    [5.8, -6.2, 1.3],
   ].forEach(([tx, tz, s], t) => {
-    const tree = sub(winX + tx, 0, back + tz);
-    outside(cylinder(0.16 * s, 0.26 * s, 2.6 * s, 0x9b6b4a, 0, 1.3 * s, 0, tree));
-    [
-      [0, 3.0, 0, 1.15],
-      [-0.95, 2.6, 0.15, 0.85],
-      [0.95, 2.65, -0.1, 0.9],
-      [0.3, 3.75, -0.2, 0.8],
-      [-0.5, 3.5, 0.25, 0.7],
-      [1.45, 2.05, 0.2, 0.6],
-      [-1.4, 2.0, -0.2, 0.62],
-    ].forEach(([bx, by, bz, r], k) => {
-      outside(ball(r * s, [0xf9c5d8, 0xfbd3e1, 0xf7b3cc][(k + t) % 3], bx * s, by * s, bz * s, tree));
+    const tree = addGroup(winX + tx, 0, back + tz, group);
+    const trunk = outside(turned([[0.28 * s, 0], [0.2 * s, 0.6 * s], [0.16 * s, 1.8 * s], [0.13 * s, 2.7 * s], [0, 2.7 * s]], mat(0x9b6b4a), 0, 0, 0, tree));
+    trunk.rotation.z = (t % 2 ? 1 : -1) * 0.05;
+    for (const [dir, len] of [[-1, 1.3], [1, 1.2]]) {
+      const branch = outside(cylinder(0.05 * s, 0.09 * s, len * s, 0x9b6b4a, dir * 0.42 * s, 2.5 * s, 0, tree));
+      branch.rotation.z = -dir * 0.9;
+    }
+    // 큰 꽃 덩어리 위에 작은 덩어리를 얹어 뭉게뭉게 보이게 한다
+    const puffs = [
+      [0, 3.0, 0, 1.1],
+      [-0.95, 2.6, 0.15, 0.82],
+      [0.95, 2.65, -0.1, 0.88],
+      [0.3, 3.75, -0.2, 0.78],
+      [-0.5, 3.5, 0.25, 0.68],
+      [1.45, 2.05, 0.2, 0.58],
+      [-1.4, 2.0, -0.2, 0.6],
+    ];
+    puffs.forEach(([bx, by, bz, r], k) => {
+      outside(ball(r * s, BLOSSOM[(k + t) % 3], bx * s, by * s, bz * s, tree));
+      for (let j = 0; j < 5; j++) {
+        const a = j * 1.26 + k;
+        const rr = r * (0.34 + random() * 0.12);
+        outside(ball(rr * s, BLOSSOM[(j + k) % 4], (bx + Math.cos(a) * r * 0.85) * s, (by + Math.sin(a * 1.7) * r * 0.6) * s, (bz + Math.sin(a) * r * 0.85) * s, tree));
+      }
     });
   });
+  // 창 바로 밖으로 뻗은 꽃가지: 햇빛 길목에 있어 방 안에 아롱진 그림자를 만든다
+  const bough = addGroup(winX + 0.85, 2.95, back - 1.0, group);
+  const stem = cylinder(0.035, 0.06, 2.6, 0x9b6b4a, 0, 0, 0, bough);
+  stem.rotation.z = 1.25;
+  for (let k = 0; k < 34; k++) {
+    const along = (random() - 0.5) * 2.5;
+    const puff = ball(0.1 + random() * 0.13, BLOSSOM[k % 4], along, along * 0.33 + (random() - 0.5) * 0.9, (random() - 0.5) * 0.5, bough);
+    puff.receiveShadow = false;
+  }
   // 구름
   [
-    [-2.5, 7.5, 1.3],
-    [3.5, 9, 1.6],
+    [-3.5, 9.5, 1.5],
+    [4.5, 11.5, 1.9],
+    [0.5, 13.5, 1.3],
   ].forEach(([cx, cy, s]) => {
-    for (const [dx, dy, r] of [[0, 0, 1], [1, -0.1, 0.75], [-1, -0.15, 0.7], [0.45, 0.4, 0.7]]) {
-      const cloud = add(new THREE.SphereGeometry(r * s, 14, 10), mat(0xffffff, { emissive: 0xffffff, emissiveIntensity: 0.35 }));
-      cloud.position.set(winX + cx + dx * s, cy + dy * s, back - 20);
+    for (const [dx, dy, r] of [[0, 0, 1], [1, -0.1, 0.75], [-1, -0.15, 0.7], [0.45, 0.4, 0.7], [-0.5, 0.35, 0.6]]) {
+      const cloud = outside(add(new THREE.SphereGeometry(r * s, 14, 10), noOutline(keep(new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false })))));
+      cloud.position.set(winX + cx + dx * s, cy + dy * s, back - 24);
       cloud.scale.z = 0.3;
-      outside(cloud);
     }
   });
+  // 흩날리는 꽃잎
+  const PETALS = 150;
+  const petalPos = new Float32Array(PETALS * 3);
+  const petalSeed = new Float32Array(PETALS * 2);
+  for (let k = 0; k < PETALS; k++) {
+    petalPos[k * 3] = winX + (random() - 0.5) * 9;
+    petalPos[k * 3 + 1] = random() * 6;
+    petalPos[k * 3 + 2] = back - 0.7 - random() * 6;
+    petalSeed[k * 2] = random() * Math.PI * 2;
+    petalSeed[k * 2 + 1] = 0.25 + random() * 0.35;
+  }
+  const petalGeometry = keep(new THREE.BufferGeometry());
+  petalGeometry.setAttribute('position', new THREE.BufferAttribute(petalPos, 3));
+  const petals = new THREE.Points(
+    petalGeometry,
+    noOutline(keep(new THREE.PointsMaterial({ map: keep(petalTexture()), size: 0.13, transparent: true, depthWrite: false, alphaTest: 0.05 }))),
+  );
+  petals.frustumCulled = false;
+  group.add(petals);
 
   // ── 뒷벽 왼쪽: 선반, 액자 ──────────────────────
   const shelfY = 2.52;
-  box(3.9, 0.06, 0.34, WOOD, -2.0, shelfY, back + 0.17);
-  for (const x of [-3.6, -2.0, -0.4]) box(0.05, 0.22, 0.26, WOOD_DARK, x, shelfY - 0.14, back + 0.14);
+  box(3.9, 0.06, 0.34, WOOD, -2.0, shelfY, back + 0.17, undefined, 0.02);
+  for (const x of [-3.6, -2.0, -0.4]) {
+    const bracket = add(new THREE.CylinderGeometry(0.22, 0.22, 0.045, 12, 1, false, 0, Math.PI / 2), mat(WOOD_DARK));
+    bracket.rotation.set(Math.PI, 0, Math.PI / 2);
+    bracket.position.set(x, shelfY - 0.03, back + 0.02);
+  }
   // 선반 위: 책, 등불, 화분과 덩굴
   let bx = -3.85;
-  [0.3, 0.26, 0.33, 0.28, 0.31, 0.25, 0.3].forEach((h, k) => {
-    const w = 0.07 + (k % 3) * 0.015;
-    box(w, h, 0.22, PASTELS[(k * 3 + 1) % PASTELS.length], bx + w / 2, shelfY + 0.03 + h / 2, back + 0.17);
+  [0.3, 0.26, 0.33, 0.28, 0.31, 0.25, 0.3, 0.27].forEach((h, k) => {
+    const w = 0.065 + (k % 3) * 0.015;
+    const book = at(add(roundedBox(w, h, 0.22, 0.008), mat(PASTELS[(k * 3 + 1) % PASTELS.length], { map: spine })), bx + w / 2, shelfY + 0.03 + h / 2, back + 0.17);
+    if (k === 7) book.rotation.z = -0.22;
     bx += w + 0.008;
   });
-  const lantern = sub(-2.55, shelfY + 0.03, back + 0.18);
-  box(0.2, 0.03, 0.2, 0x6b5340, 0, 0.015, 0, lantern);
-  add(new THREE.BoxGeometry(0.15, 0.24, 0.15), mat(0xffe2a6, { emissive: 0xffc56b, emissiveIntensity: 1.4 }), lantern).position.y = 0.15;
-  for (const [lx, lz] of [[-0.085, -0.085], [0.085, -0.085], [-0.085, 0.085], [0.085, 0.085]]) box(0.02, 0.26, 0.02, 0x6b5340, lx, 0.15, lz, lantern);
-  box(0.22, 0.03, 0.22, 0x6b5340, 0, 0.29, 0, lantern);
-  cylinder(0.02, 0.07, 0.07, 0x6b5340, 0, 0.34, 0, lantern);
-  const glow = new THREE.PointLight(0xffd9a0, 2.2, 3.5);
-  glow.position.set(-2.55, shelfY + 0.2, back + 0.35);
+  const lantern = addGroup(-2.55, shelfY + 0.03, back + 0.18, group);
+  box(0.21, 0.03, 0.21, 0x6b5340, 0, 0.015, 0, lantern, 0.008);
+  const flame = add(roundedBox(0.15, 0.24, 0.15, 0.02), mat(0xffe2a6, { emissive: 0xffc56b, emissiveIntensity: 1.6 }), lantern);
+  flame.position.y = 0.15;
+  flame.castShadow = false;
+  for (const [lx, lz] of [[-0.085, -0.085], [0.085, -0.085], [-0.085, 0.085], [0.085, 0.085]]) box(0.02, 0.26, 0.02, 0x6b5340, lx, 0.15, lz, lantern, 0.004);
+  turned([[0.13, 0], [0.13, 0.02], [0.05, 0.07], [0.03, 0.1], [0, 0.1]], mat(0x6b5340), 0, 0.28, 0, lantern);
+  const ring = add(new THREE.TorusGeometry(0.03, 0.006, 6, 16), mat(0x6b5340), lantern);
+  ring.position.y = 0.41;
+  // 등불의 빛 번짐
+  const glowSprite = new THREE.Sprite(
+    keep(
+      new THREE.SpriteMaterial({
+        map: keep(radialTexture('rgba(255, 214, 150, 0.9)', 'rgba(255, 190, 110, 0)')),
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        transparent: true,
+      }),
+    ),
+  );
+  glowSprite.scale.setScalar(1.25);
+  glowSprite.position.set(-2.55, shelfY + 0.2, back + 0.22);
+  group.add(glowSprite);
+  const glow = new THREE.PointLight(0xffd9a0, 2.4, 3.5);
+  glow.position.set(-2.55, shelfY + 0.2, back + 0.36);
   group.add(glow);
-  plant(-1.95, shelfY + 0.03, back + 0.18, 0.42);
-  plant(-1.2, shelfY + 0.03, back + 0.18, 0.5);
-  plant(-0.5, shelfY + 0.03, back + 0.18, 0.36);
+  plant(-1.95, shelfY + 0.03, back + 0.18, 0.42, undefined, 10);
+  plant(-1.2, shelfY + 0.03, back + 0.18, 0.5, undefined, 10);
+  plant(-0.5, shelfY + 0.03, back + 0.18, 0.36, undefined, 9);
   vine(-1.3, shelfY, back + 0.33, 0.8);
   vine(-1.08, shelfY, back + 0.33, 0.5);
   vine(-0.42, shelfY, back + 0.33, 0.62);
   vine(-3.9, shelfY + 0.2, back + 0.3, 0.95);
   // 선반 아래: 풍경화 두 점과 꽃 그림 두 점
-  frame(-3.78, 1.72, 0.32, 0.86, [0xbfe0f5, 0xcfe6a8]);
-  frame(-2.5, 1.72, 1.55, 1.0, [0xbfe0f5, 0xcfe6a8, 0xfff3d6]);
-  frame(-1.2, 2.02, 0.4, 0.52, [0xfdf6ec, 0xcfe6a8, 0xf9c5d8]);
-  frame(-1.2, 1.36, 0.4, 0.52, [0xfdf6ec, 0xcfe6a8, 0xf48fb1]);
+  frame(-3.78, 1.72, back, 0.3, 0.86, landscapePainting(3, false));
+  frame(-2.5, 1.72, back, 1.55, 1.0, landscapePainting(8));
+  frame(-1.2, 2.02, back, 0.4, 0.52, flowerPainting('#f9c5d8', 2));
+  frame(-1.2, 1.36, back, 0.4, 0.52, flowerPainting('#f48fb1', 9));
 
   // ── 작업 책상 (뒷벽 왼쪽) ──────────────────────
-  const desk = sub(-2.75, 0, back + 0.48);
-  box(2.5, 0.08, 0.82, WOOD, 0, 0.86, 0, desk);
+  const desk = addGroup(-2.75, 0, back + 0.48, group);
+  box(2.5, 0.08, 0.82, WOOD, 0, 0.86, 0, desk, 0.03);
   box(2.3, 0.12, 0.05, WOOD_DARK, 0, 0.76, 0.34, desk);
-  for (const [lx, lz] of [[-1.15, -0.33], [1.15, -0.33], [-1.15, 0.33], [1.15, 0.33]]) box(0.09, 0.82, 0.09, WOOD_DARK, lx, 0.41, lz, desk);
-  box(2.3, 0.05, 0.6, WOOD_LIGHT, 0, 0.28, 0, desk);
+  box(2.3, 0.12, 0.05, WOOD_DARK, 0, 0.76, -0.34, desk);
+  for (const [lx, lz] of [[-1.15, -0.33], [1.15, -0.33], [-1.15, 0.33], [1.15, 0.33]]) box(0.09, 0.82, 0.09, WOOD_DARK, lx, 0.41, lz, desk, 0.02);
+  box(2.3, 0.05, 0.6, WOOD_LIGHT, 0, 0.28, 0, desk, 0.02);
+  contact(-2.75, back + 0.5, 2.9, 1.2);
   // 붓통 세 개
   [
     [-1.05, 0.02, 0xfdfdfd],
     [-0.82, -0.12, 0xf3ece0],
-    [0.02, -0.14, 0xfdfdfd],
+    [0.02, -0.14, 0xcfe3f5],
   ].forEach(([jx, jz, c], j) => {
-    cylinder(0.085, 0.075, 0.22, c, jx, 1.01, jz, desk);
+    turned([[0, 0], [0.07, 0], [0.078, 0.02], [0.086, 0.2], [0.09, 0.22], [0.08, 0.22], [0.076, 0.03], [0, 0.03]], mat(c, { roughness: 0.5 }), jx, 0.9, jz, desk);
     for (let k = 0; k < 4; k++) {
       const a = k * 1.7 + j;
-      const brush = cylinder(0.011, 0.011, 0.3, WOOD_DARK, jx + Math.cos(a) * 0.035, 1.2, jz + Math.sin(a) * 0.035, desk);
-      brush.rotation.set(Math.sin(a) * 0.2, 0, Math.cos(a) * 0.2);
-      ball(0.024, PASTELS[(k + j * 2) % 7], jx + Math.cos(a) * 0.065, 1.35, jz + Math.sin(a) * 0.065, desk);
+      const lean = 0.22;
+      const brush = addGroup(jx + Math.cos(a) * 0.03, 0.93, jz + Math.sin(a) * 0.03, desk);
+      brush.rotation.set(Math.sin(a) * lean, 0, -Math.cos(a) * lean);
+      cylinder(0.009, 0.007, 0.3, WOOD_DARK, 0, 0.15, 0, brush);
+      cylinder(0.012, 0.012, 0.04, 0xcfd4dc, 0, 0.31, 0, brush);
+      turned([[0.012, 0], [0.018, 0.03], [0.012, 0.06], [0, 0.085]], mat(PASTELS[(k + j * 2) % 7]), 0, 0.33, 0, brush);
     }
   });
   // 유리 꽃병과 꽃다발
-  const vase = sub(-0.42, 0.9, -0.05, desk);
-  add(new THREE.CylinderGeometry(0.13, 0.11, 0.42, 24), mat(0xdff1f7, { transparent: true, opacity: 0.55, roughness: 0.2 }), vase).position.y = 0.21;
-  for (const [sx, sz] of [[-0.03, 0], [0.03, 0.02], [0, -0.03]]) cylinder(0.008, 0.008, 0.55, 0x6aa85a, sx, 0.3, sz, vase);
-  [
-    [0, 0.72, 0, 0.15, 0xf9c5d8],
-    [-0.17, 0.62, 0.05, 0.13, 0xffffff],
-    [0.17, 0.64, 0.03, 0.13, 0xf48fb1],
-    [0.05, 0.6, 0.16, 0.12, 0xcfe3f5],
-    [-0.06, 0.6, -0.15, 0.12, 0xffffff],
-    [-0.24, 0.48, -0.06, 0.1, 0xcfe3f5],
-    [0.25, 0.5, -0.08, 0.1, 0xffffff],
-    [0.1, 0.84, -0.04, 0.1, 0xffffff],
-    [-0.1, 0.82, 0.06, 0.1, 0xf48fb1],
-    [0.3, 0.42, 0.1, 0.08, 0x8fc97c],
-    [-0.3, 0.4, 0.1, 0.08, 0x8fc97c],
-    [0, 0.44, 0.2, 0.08, 0x7cb86a],
-  ].forEach(([fx, fy, fz, r, c]) => ball(r, c, fx, fy, fz, vase));
-  // 고양이 장식
-  const cat = sub(0.42, 0.9, -0.08, desk);
-  ball(0.12, 0xfffaf2, 0, 0.11, 0, cat).scale.set(1, 0.95, 0.85);
-  ball(0.1, 0xfffaf2, 0, 0.28, 0.02, cat);
-  ball(0.05, 0xf4a24c, 0.05, 0.33, 0, cat);
-  ball(0.06, 0xf4a24c, -0.07, 0.13, 0.03, cat);
-  for (const ex of [-0.055, 0.055]) {
-    const ear = add(new THREE.ConeGeometry(0.035, 0.07, 10), mat(ex > 0 ? 0xf4a24c : 0xfffaf2), cat);
-    ear.position.set(ex, 0.385, 0.02);
-    ball(0.011, 0x5b4636, ex * 0.7, 0.29, 0.115, cat);
+  const vase = addGroup(-0.42, 0.9, -0.05, desk);
+  const glass = noOutline(keep(new THREE.MeshStandardMaterial({ color: 0xdff1f7, transparent: true, opacity: 0.5, roughness: 0.15, side: THREE.DoubleSide })));
+  turned([[0, 0], [0.1, 0], [0.13, 0.04], [0.145, 0.16], [0.12, 0.3], [0.085, 0.38], [0.105, 0.44]], glass, 0, 0, 0, vase).castShadow = false;
+  turned([[0, 0.01], [0.095, 0.01], [0.125, 0.05], [0.135, 0.15], [0, 0.15]], mat(0xbfe3f2, { transparent: true, opacity: 0.55, roughness: 0.2 }), 0, 0, 0, vase).castShadow = false;
+  for (const [sx, sz, lean] of [[-0.03, 0, -0.12], [0.03, 0.02, 0.12], [0, -0.03, 0.02], [0.02, 0.03, -0.05]]) {
+    cylinder(0.007, 0.007, 0.6, 0x6aa85a, sx, 0.32, sz, vase).rotation.z = lean;
   }
-  ball(0.012, 0xf48fb1, 0, 0.265, 0.12, cat);
+  // 수국처럼 작은 꽃이 모인 송이
+  [
+    [0, 0.74, 0, 0.15, 0xf9c5d8],
+    [-0.18, 0.63, 0.05, 0.13, 0xffffff],
+    [0.18, 0.65, 0.03, 0.13, 0xf48fb1],
+    [0.05, 0.61, 0.17, 0.12, 0xcfe3f5],
+    [-0.06, 0.61, -0.16, 0.12, 0xffffff],
+    [-0.25, 0.49, -0.06, 0.1, 0xcfe3f5],
+    [0.26, 0.51, -0.08, 0.1, 0xffffff],
+    [0.1, 0.86, -0.04, 0.1, 0xffffff],
+    [-0.1, 0.84, 0.06, 0.1, 0xf48fb1],
+  ].forEach(([fx, fy, fz, r, c]) => {
+    ball(r * 0.78, c, fx, fy, fz, vase);
+    for (let k = 0; k < 9; k++) {
+      const a = k * 2.4;
+      const up = 0.25 + ((k * 0.37) % 1) * 1.1;
+      ball(r * 0.36, c, fx + Math.cos(a) * Math.sin(up) * r * 0.75, fy + Math.cos(up) * r * 0.75, fz + Math.sin(a) * Math.sin(up) * r * 0.75, vase).castShadow = false;
+    }
+  });
+  for (let k = 0; k < 7; k++) {
+    const a = k * 0.9;
+    const leaf = ball(1, LEAF[k % 4], Math.cos(a) * 0.24, 0.47 + (k % 3) * 0.03, Math.sin(a) * 0.24, vase);
+    leaf.scale.set(0.11, 0.035, 0.055);
+    leaf.rotation.set(0, -a, 0.5);
+  }
+  // 고양이 장식
+  const cat = addGroup(0.42, 0.9, -0.08, desk);
+  turned(smoothProfile([[0, 0], [0.1, 0.005], [0.125, 0.07], [0.105, 0.17], [0.06, 0.22], [0, 0.23]]), mat(0xfffaf2, { roughness: 0.55 }), 0, 0, 0, cat);
+  ball(0.1, 0xfffaf2, 0, 0.29, 0.02, cat).scale.set(1.08, 0.95, 0.95);
+  ball(0.05, 0xf4a24c, 0.05, 0.345, -0.005, cat);
+  ball(0.06, 0xf4a24c, -0.075, 0.13, 0.04, cat);
+  ball(0.045, 0x8b6748, 0.08, 0.09, -0.03, cat);
+  for (const ex of [-0.058, 0.058]) {
+    const ear = add(new THREE.ConeGeometry(0.036, 0.075, 10), mat(ex > 0 ? 0xf4a24c : 0xfffaf2), cat);
+    ear.position.set(ex, 0.395, 0.02);
+    ear.rotation.z = -ex * 4;
+    // 웃는 눈: 납작한 반원
+    const eye = add(new THREE.TorusGeometry(0.017, 0.005, 6, 12, Math.PI), mat(0x5b4636), cat);
+    eye.position.set(ex * 0.72, 0.3, 0.115);
+    ball(0.016, 0xf9a8bf, ex * 1.1, 0.27, 0.1, cat).scale.z = 0.4;
+  }
+  ball(0.011, 0xf48fb1, 0, 0.275, 0.125, cat);
+  const tail = add(new THREE.TorusGeometry(0.07, 0.018, 8, 16, Math.PI * 1.2), mat(0xf4a24c), cat);
+  tail.position.set(0.1, 0.07, -0.06);
+  tail.rotation.set(Math.PI / 2, 0, 0.6);
   // 팔레트와 물감 튜브
-  const paletteDish = cylinder(0.3, 0.3, 0.025, 0xf3e3cf, 0.92, 0.915, 0.08, desk);
-  paletteDish.scale.z = 0.72;
-  [0xf48fb1, 0xf9d65c, 0x7cb86a, 0x6fb7e9, 0xb388eb, 0xf4a24c, 0xffffff, 0x5cc8b8].forEach((c, k) => {
-    const a = (k / 8) * Math.PI * 2;
-    cylinder(0.05, 0.05, 0.012, c, Math.cos(a) * 0.19, 0.018, Math.sin(a) * 0.19, paletteDish);
+  const paletteShape = new THREE.Shape();
+  paletteShape.absellipse(0, 0, 0.3, 0.21, 0, Math.PI * 2);
+  const thumb = new THREE.Path();
+  thumb.absellipse(0.17, -0.08, 0.04, 0.03, 0, Math.PI * 2);
+  paletteShape.holes.push(thumb);
+  const paletteBoard = add(new THREE.ExtrudeGeometry(paletteShape, { depth: 0.018, bevelEnabled: true, bevelSize: 0.006, bevelThickness: 0.006, bevelSegments: 2, curveSegments: 28 }), mat(0xf0dcc0), desk);
+  paletteBoard.rotation.set(-Math.PI / 2, 0, 0.25);
+  paletteBoard.position.set(0.92, 0.905, 0.1);
+  [0xf48fb1, 0xf9d65c, 0x7cb86a, 0x6fb7e9, 0xb388eb, 0xf4a24c, 0xffffff, 0x5cc8b8, 0xe2574c].forEach((c, k) => {
+    const a = 0.6 + (k / 9) * Math.PI * 1.55;
+    const dab = ball(0.042, c, 0.92 + Math.cos(a) * 0.2, 0.932, 0.1 - Math.sin(a) * 0.14, desk);
+    dab.scale.set(1 + (k % 3) * 0.25, 0.3, 1);
+    dab.castShadow = false;
   });
   [0x6fb7e9, 0xf9d65c, 0xf48fb1].forEach((c, k) => {
-    const tube = cylinder(0.022, 0.028, 0.16, c, 0.2 + k * 0.07, 0.925, 0.26, desk);
-    tube.rotation.set(0, 0.3 * k, Math.PI / 2);
+    const tube = addGroup(0.18 + k * 0.08, 0.925, 0.27, desk);
+    tube.rotation.set(0, 0.3 * k - 0.2, Math.PI / 2);
+    turned([[0.004, 0], [0.026, 0.02], [0.026, 0.13], [0.012, 0.15], [0.012, 0.17], [0, 0.17]], mat(c, { roughness: 0.4 }), 0, -0.08, 0, tube);
   });
 
   // ── 책상 앞 바닥: 종이 바구니, 상자, 화분, 나무 상자 ──
-  const basket = sub(-2.45, 0, -1.55);
-  cylinder(0.3, 0.24, 0.42, 0xcfa26b, 0, 0.21, 0, basket);
-  cylinder(0.31, 0.31, 0.04, 0xb9874c, 0, 0.42, 0, basket);
+  const basket = addGroup(-2.45, 0, -1.55, group);
+  turned([[0, 0], [0.23, 0], [0.25, 0.03], [0.3, 0.4], [0.32, 0.44], [0.29, 0.44], [0.27, 0.05], [0, 0.05]], mat(0xcfa26b, { map: linen }), 0, 0, 0, basket);
+  for (const y of [0.1, 0.2, 0.3, 0.4]) {
+    const hoop = add(new THREE.TorusGeometry(0.255 + y * 0.14, 0.012, 6, 28), mat(0xb9874c), basket);
+    hoop.rotation.x = Math.PI / 2;
+    hoop.position.y = y;
+  }
   [
     [-0.1, 0.05, 0.2],
     [0.08, -0.06, -0.18],
     [0.02, 0.12, 0.05],
     [-0.02, -0.1, -0.3],
-  ].forEach(([rx, rz, tilt]) => {
-    const roll = cylinder(0.055, 0.055, 0.62, 0xfdfbf5, rx, 0.52, rz, basket);
-    roll.rotation.set(tilt * 0.6, 0, tilt);
+    [0.12, 0.06, 0.25],
+  ].forEach(([rx, rz, lean]) => {
+    const roll = cylinder(0.05, 0.05, 0.66, 0xfdfbf5, rx, 0.5, rz, basket);
+    roll.rotation.set(lean * 0.6, 0, lean);
   });
-  const boxes = sub(-3.5, 0, -0.75);
-  box(0.62, 0.3, 0.46, 0x7f9fc6, 0, 0.15, 0, boxes).rotation.y = 0.12;
-  box(0.56, 0.24, 0.42, 0x9fbde0, 0.02, 0.42, 0, boxes).rotation.y = -0.1;
-  box(0.58, 0.03, 0.44, 0xe9f0f8, 0.02, 0.555, 0, boxes).rotation.y = -0.1;
-  plant(-3.45, 0, 0.55, 1.15);
-  box(0.7, 0.38, 0.5, WOOD_LIGHT, -3.5, 0.19, 1.85).rotation.y = 0.08;
-  box(0.72, 0.04, 0.52, WOOD, -3.5, 0.4, 1.85).rotation.y = 0.08;
+  contact(-2.45, -1.55, 0.95, 0.95);
+  const boxes = addGroup(-3.5, 0, -0.75, group);
+  box(0.62, 0.3, 0.46, 0x7f9fc6, 0, 0.15, 0, boxes, 0.02).rotation.y = 0.12;
+  box(0.64, 0.05, 0.48, 0x94b2d6, 0, 0.3, 0, boxes, 0.015).rotation.y = 0.12;
+  box(0.56, 0.24, 0.42, 0x9fbde0, 0.02, 0.45, 0, boxes, 0.02).rotation.y = -0.1;
+  box(0.58, 0.05, 0.44, 0xe9f0f8, 0.02, 0.58, 0, boxes, 0.015).rotation.y = -0.1;
+  contact(-3.5, -0.75, 1.0, 0.85);
+  plant(-3.45, 0, 0.55, 1.15, undefined, 22);
+  contact(-3.45, 0.55, 1.2, 1.2);
+  const crate = addGroup(-3.5, 0, 1.85, group);
+  crate.rotation.y = 0.08;
+  for (const y of [0.07, 0.2, 0.33]) {
+    box(0.7, 0.1, 0.03, WOOD_LIGHT, 0, y, 0.24, crate);
+    box(0.7, 0.1, 0.03, WOOD_LIGHT, 0, y, -0.24, crate);
+    box(0.03, 0.1, 0.48, WOOD_LIGHT, 0.335, y, 0, crate);
+    box(0.03, 0.1, 0.48, WOOD_LIGHT, -0.335, y, 0, crate);
+  }
+  for (const [px, pz] of [[-0.32, -0.23], [0.32, -0.23], [-0.32, 0.23], [0.32, 0.23]]) box(0.05, 0.4, 0.05, WOOD, px, 0.2, pz, crate);
+  box(0.64, 0.02, 0.44, WOOD, 0, 0.02, 0, crate);
+  contact(-3.5, 1.85, 1.05, 0.85);
 
   // ── 이젤 ───────────────────────────────────────
-  const easel = sub(EASEL.x, 0, EASEL.z);
+  const easel = addGroup(EASEL.x, 0, EASEL.z, group);
   easel.rotation.y = EASEL.turn;
   for (const x of [-0.42, 0.42]) {
-    const leg = box(0.07, 1.95, 0.07, WOOD, x * 1.15, 0.95, 0.12, easel);
+    const leg = box(0.07, 1.95, 0.06, WOOD, x * 1.15, 0.95, 0.12, easel, 0.015);
     leg.rotation.set(-0.1, 0, x > 0 ? 0.1 : -0.1);
   }
-  box(0.07, 1.95, 0.07, WOOD_DARK, 0, 0.95, -0.44, easel).rotation.x = 0.28;
+  box(0.07, 1.95, 0.06, WOOD_DARK, 0, 0.95, -0.44, easel, 0.015).rotation.x = 0.28;
   box(0.86, 0.06, 0.05, WOOD_DARK, 0, 0.42, 0.09, easel);
   // 뒤로 살짝 젖혀진 부분: 받침 선반, 기둥, 캔버스 판
-  const tilt = sub(0, 0.88, 0.1, easel);
+  const tilt = addGroup(0, 0.88, 0.1, easel);
   tilt.rotation.x = -0.13;
-  box(1.4, 0.06, 0.17, WOOD, 0, 0, 0.05, tilt);
+  box(1.4, 0.06, 0.17, WOOD, 0, 0, 0.05, tilt, 0.02);
+  box(1.4, 0.035, 0.03, WOOD_DARK, 0, 0.045, 0.12, tilt);
   box(0.09, 1.4, 0.05, WOOD_DARK, 0, 0.64, -0.04, tilt);
-  const clamp = box(0.34, 0.1, 0.1, WOOD, 0, 0, 0.02, tilt);
+  const clamp = box(0.34, 0.1, 0.1, WOOD, 0, 0, 0.02, tilt, 0.02);
   const board = add(new THREE.BoxGeometry(1, 1, 0.035), mat(0xfffdf8, { roughness: 1 }), tilt);
   const setBoardAspect = (aspect: number) => {
     let h = BOARD_HEIGHT;
@@ -361,62 +602,92 @@ export function buildAtelierRoom(): AtelierRoom {
     clamp.position.y = 0.03 + h + 0.05;
   };
   setBoardAspect(4 / 3);
+  contact(EASEL.x, EASEL.z - 0.1, 1.7, 1.5);
 
   // ── 의자: 캔버스 정면에 놓는다 ─────────────────
   const facing = { x: Math.sin(EASEL.turn), z: Math.cos(EASEL.turn) };
   const stoolAt = { x: EASEL.x + facing.x * 1.32, z: EASEL.z + facing.z * 1.32 };
-  const stool = sub(stoolAt.x, 0, stoolAt.z);
-  const cushionTop = cylinder(0.31, 0.31, 0.11, 0xfff3df, 0, 0.53, 0, stool);
-  cushionTop.scale.y = 1;
+  const stool = addGroup(stoolAt.x, 0, stoolAt.z, group);
+  // 통통한 방석
+  turned(smoothProfile([[0, 0.47], [0.2, 0.47], [0.3, 0.485], [0.325, 0.53], [0.3, 0.575], [0.2, 0.595], [0, 0.6]]), fabric(0xfff3df), 0, 0, 0, stool);
   cylinder(0.29, 0.27, 0.05, WOOD, 0, 0.45, 0, stool);
   for (let k = 0; k < 4; k++) {
     const a = (k / 4) * Math.PI * 2 + Math.PI / 4;
     const leg = cylinder(0.03, 0.036, 0.46, WOOD_DARK, Math.cos(a) * 0.21, 0.22, Math.sin(a) * 0.21, stool);
     leg.rotation.set(Math.sin(a) * 0.13, 0, -Math.cos(a) * 0.13);
   }
-  cylinder(0.2, 0.2, 0.025, WOOD_DARK, 0, 0.17, 0, stool);
+  const brace = add(new THREE.TorusGeometry(0.2, 0.014, 6, 24), mat(WOOD_DARK), stool);
+  brace.rotation.x = Math.PI / 2;
+  brace.position.y = 0.17;
+  contact(stoolAt.x, stoolAt.z, 0.95, 0.95);
 
   // ── 깔개 ───────────────────────────────────────
-  for (const [w, d, c, y] of [[4.0, 2.8, 0xeed9e2, 0.008], [3.7, 2.5, 0xfbf1ee, 0.011], [3.0, 1.8, 0xf3e1ea, 0.014], [2.7, 1.5, 0xfdf6f2, 0.017]]) {
-    box(w, 0.012, d, c, 0.35, y, 0.05).castShadow = false;
-  }
+  // 윗면에만 무늬를 입힌다 (상자의 면 순서: +x, -x, +y, -y, +z, -z)
+  const rugSide = mat(0xf3dde6);
+  const rug = new THREE.Mesh(keep(new THREE.BoxGeometry(4.0, 0.016, 2.8)), [
+    rugSide,
+    rugSide,
+    mat(0xffffff, { map: keep(rugTexture()), roughness: 1 }),
+    rugSide,
+    rugSide,
+    rugSide,
+  ]);
+  rug.position.set(0.35, 0.008, 0.05);
+  rug.receiveShadow = true;
+  group.add(rug);
 
   // ── 물감 수레, 창가 화분 ───────────────────────
-  const cart = sub(1.2, 0, back + 0.52);
+  const cart = addGroup(1.2, 0, back + 0.52, group);
   for (const [cx, cz] of [[-0.3, -0.19], [0.3, -0.19], [-0.3, 0.19], [0.3, 0.19]]) {
     cylinder(0.014, 0.014, 0.92, 0xe9e6e0, cx, 0.5, cz, cart);
     ball(0.035, 0x8d8a85, cx, 0.035, cz, cart);
   }
   [0.16, 0.5, 0.86].forEach((y, tier) => {
     box(0.66, 0.03, 0.44, 0xfaf8f4, 0, y, 0, cart);
-    box(0.66, 0.07, 0.02, 0xfaf8f4, 0, y + 0.04, 0.21, cart);
-    box(0.66, 0.07, 0.02, 0xfaf8f4, 0, y + 0.04, -0.21, cart);
+    for (const z of [0.21, -0.21]) box(0.66, 0.07, 0.02, 0xfaf8f4, 0, y + 0.04, z, cart, 0.008);
+    for (const x of [0.32, -0.32]) box(0.02, 0.07, 0.44, 0xfaf8f4, x, y + 0.04, 0, cart, 0.008);
     for (let k = 0; k < 6; k++) {
       const h = 0.13 + ((k + tier) % 3) * 0.03;
-      cylinder(0.035, 0.04, h, PASTELS[(k * 2 + tier * 3) % 7], -0.25 + (k % 3) * 0.25 + (k > 2 ? 0.1 : 0), y + 0.015 + h / 2, k > 2 ? 0.09 : -0.09, cart);
-      cylinder(0.018, 0.018, 0.035, 0xffffff, -0.25 + (k % 3) * 0.25 + (k > 2 ? 0.1 : 0), y + 0.03 + h, k > 2 ? 0.09 : -0.09, cart);
+      const px = -0.25 + (k % 3) * 0.25 + (k > 2 ? 0.1 : 0);
+      const pz = k > 2 ? 0.09 : -0.09;
+      // 물감 병: 몸통, 어깨, 뚜껑
+      turned([[0, 0], [0.036, 0], [0.04, 0.01], [0.04, h * 0.72], [0.022, h * 0.9], [0.022, h], [0, h]], mat(PASTELS[(k * 2 + tier * 3) % 7], { roughness: 0.45 }), px, y + 0.015, pz, cart);
+      cylinder(0.024, 0.024, 0.03, 0xffffff, px, y + 0.03 + h, pz, cart);
     }
   });
-  const stand = sub(0.5, 0, back + 0.42);
-  cylinder(0.24, 0.24, 0.04, WOOD, 0, 0.8, 0, stand);
-  cylinder(0.035, 0.035, 0.8, WOOD_DARK, 0, 0.4, 0, stand);
-  cylinder(0.2, 0.2, 0.03, WOOD_DARK, 0, 0.015, 0, stand);
-  plant(0, 0.82, 0, 0.62, stand);
+  contact(1.2, back + 0.52, 1.0, 0.8);
+  const stand = addGroup(0.5, 0, back + 0.42, group);
+  turned([[0, 0.78], [0.22, 0.78], [0.25, 0.8], [0.22, 0.82], [0, 0.82]], mat(WOOD), 0, 0, 0, stand);
+  turned([[0.2, 0], [0.2, 0.025], [0.05, 0.06], [0.03, 0.4], [0.045, 0.74], [0.09, 0.78], [0, 0.78]], mat(WOOD_DARK), 0, 0, 0, stand);
+  plant(0, 0.82, 0, 0.62, stand, 14);
+  contact(0.5, back + 0.42, 0.7, 0.7);
 
   // ── 창가 찻상 ──────────────────────────────────
-  cylinder(0.4, 0.4, 0.05, WOOD, 2.6, 0.4, back + 0.72);
-  cylinder(0.05, 0.16, 0.38, WOOD_DARK, 2.6, 0.19, back + 0.72);
-  cylinder(0.065, 0.045, 0.085, 0xffffff, 2.5, 0.47, back + 0.78);
-  cylinder(0.11, 0.1, 0.13, 0xf9c5d8, 2.74, 0.49, back + 0.66);
-  cylinder(0.03, 0.03, 0.02, 0xf9c5d8, 2.74, 0.565, back + 0.66);
+  const tea = addGroup(2.6, 0, back + 0.72, group);
+  turned([[0, 0.37], [0.37, 0.37], [0.4, 0.395], [0.37, 0.42], [0, 0.42]], mat(WOOD), 0, 0, 0, tea);
+  turned([[0.2, 0], [0.19, 0.03], [0.07, 0.09], [0.05, 0.3], [0.1, 0.37], [0, 0.37]], mat(WOOD_DARK), 0, 0, 0, tea);
+  // 찻잔과 받침, 찻주전자
+  turned([[0, 0.42], [0.075, 0.42], [0.085, 0.43], [0, 0.432]], mat(0xffffff, { roughness: 0.3 }), -0.1, 0, 0.06, tea);
+  turned([[0, 0.43], [0.03, 0.43], [0.05, 0.47], [0.056, 0.5], [0.05, 0.5], [0.045, 0.47], [0, 0.445]], mat(0xffffff, { roughness: 0.3, side: THREE.DoubleSide }), -0.1, 0, 0.06, tea);
+  cylinder(0.045, 0.04, 0.004, 0xc98f5a, -0.1, 0.49, 0.06, tea).castShadow = false;
+  const pot = addGroup(0.14, 0.42, -0.06, tea);
+  turned(smoothProfile([[0, 0], [0.07, 0.005], [0.11, 0.06], [0.1, 0.12], [0.06, 0.15], [0, 0.155]]), mat(0xf9c5d8, { roughness: 0.35 }), 0, 0, 0, pot);
+  ball(0.018, 0xf9c5d8, 0, 0.165, 0, pot);
+  const handle = add(new THREE.TorusGeometry(0.045, 0.01, 8, 16, Math.PI), mat(0xf9c5d8, { roughness: 0.35 }), pot);
+  handle.position.set(-0.1, 0.08, 0);
+  handle.rotation.z = Math.PI / 2;
+  const spout = cylinder(0.01, 0.018, 0.09, 0xf9c5d8, 0.12, 0.09, 0, pot);
+  spout.rotation.z = -0.9;
+  contact(2.6, back + 0.72, 0.9, 0.9);
 
   // ── 책장 (오른쪽 벽) ───────────────────────────
-  const shelf = sub(halfW - 0.27, 0, -1.65);
+  const shelf = addGroup(halfW - 0.27, 0, -1.65, group);
   const shelfLen = 1.9;
   const shelfH = 2.55;
   box(0.5, shelfH, 0.06, WOOD, 0, shelfH / 2, -shelfLen / 2, shelf);
   box(0.5, shelfH, 0.06, WOOD, 0, shelfH / 2, shelfLen / 2, shelf);
   box(0.04, shelfH, shelfLen, WOOD_DARK, 0.23, shelfH / 2, 0, shelf);
+  box(0.56, 0.07, shelfLen + 0.12, WOOD, 0, shelfH + 0.01, 0, shelf, 0.02);
   for (let row = 0; row < 6; row++) {
     const y = 0.06 + row * 0.49;
     box(0.5, 0.05, shelfLen, WOOD, 0, y, 0, shelf);
@@ -424,76 +695,96 @@ export function buildAtelierRoom(): AtelierRoom {
     let z = -shelfLen / 2 + 0.06;
     for (let k = 0; z < shelfLen / 2 - 0.16; k++) {
       const seed = (row * 7 + k * 13) % 11;
-      const w = 0.065 + (seed % 4) * 0.018;
+      const w = 0.06 + (seed % 4) * 0.018;
       const h = 0.27 + (seed % 5) * 0.03;
-      // 셋째 칸 가운데는 토끼 인형, 둘째 칸 끝은 꽃병 자리로 비워 둔다
+      // 넷째 칸 가운데는 토끼 인형, 셋째 칸 끝은 꽃병 자리로 비워 둔다
       const reserved = (row === 3 && z > -0.25 && z < 0.3) || (row === 2 && z > 0.45);
       if (seed === 5 || reserved) {
         z += 0.12;
         continue;
       }
-      box(0.3, h, w, PASTELS[(row * 3 + k) % PASTELS.length], -0.05, y + 0.025 + h / 2, z + w / 2, shelf);
+      const book = at(add(roundedBox(0.3 - (seed % 3) * 0.02, h, w, 0.008), mat(PASTELS[(row * 3 + k) % PASTELS.length], { map: spine })), -0.05, y + 0.025 + h / 2, z + w / 2);
+      shelf.add(book);
+      // 가끔 기대어 선 책
+      if (seed === 9) book.rotation.x = 0.16;
       z += w + 0.01;
     }
   }
   // 토끼 인형
-  const plush = sub(-0.08, 0.06 + 3 * 0.49 + 0.025, 0.03, shelf);
+  const plush = addGroup(-0.08, 0.06 + 3 * 0.49 + 0.025, 0.03, shelf);
   plush.rotation.y = -Math.PI / 2;
-  ball(0.1, 0xfffaf2, 0, 0.1, 0, plush);
-  ball(0.085, 0xfffaf2, 0, 0.24, 0.01, plush);
+  turned(smoothProfile([[0, 0], [0.08, 0.005], [0.105, 0.07], [0.08, 0.16], [0, 0.19]]), fabric(0xfffaf2), 0, 0, 0, plush);
+  ball(0.09, 0xfffaf2, 0, 0.25, 0.01, plush);
   for (const ex of [-0.04, 0.04]) {
-    const ear = add(new THREE.CapsuleGeometry(0.022, 0.1, 4, 8), mat(0xfffaf2), plush);
-    ear.position.set(ex, 0.37, 0);
-    ball(0.01, 0x5b4636, ex * 0.75, 0.25, 0.085, plush);
-    ball(0.035, 0xfffaf2, ex * 2, 0.06, 0.07, plush);
+    const ear = add(new THREE.CapsuleGeometry(0.022, 0.11, 4, 8), mat(0xfffaf2), plush);
+    ear.position.set(ex, 0.385, 0);
+    ear.rotation.z = -ex * 3;
+    ball(0.011, 0x5b4636, ex * 0.75, 0.26, 0.088, plush);
+    ball(0.035, 0xfffaf2, ex * 2.1, 0.05, 0.075, plush);
+    ball(0.03, 0xfffaf2, ex * 2.3, 0.14, 0.05, plush);
   }
-  box(0.11, 0.035, 0.03, 0xf48fb1, 0, 0.165, 0.085, plush);
+  // 분홍 리본
+  for (const side of [-1, 1]) {
+    const bow = ball(0.035, 0xf48fb1, side * 0.035, 0.175, 0.085, plush);
+    bow.scale.set(1.1, 0.75, 0.45);
+  }
+  ball(0.016, 0xe5709a, 0, 0.175, 0.095, plush);
   // 흰 꽃을 꽂은 작은 꽃병
-  const smallVase = sub(-0.06, 0.06 + 2 * 0.49 + 0.025, 0.7, shelf);
-  cylinder(0.05, 0.065, 0.14, 0xdff1f7, 0, 0.07, 0, smallVase);
-  [[0, 0.24, 0], [0.06, 0.2, 0.03], [-0.06, 0.2, -0.02], [0.02, 0.19, -0.06], [-0.02, 0.27, 0.04]].forEach(([fx, fy, fz]) => ball(0.04, 0xffffff, fx, fy, fz, smallVase));
+  const smallVase = addGroup(-0.06, 0.06 + 2 * 0.49 + 0.025, 0.7, shelf);
+  turned([[0, 0], [0.045, 0], [0.065, 0.04], [0.06, 0.09], [0.035, 0.13], [0.045, 0.15]], mat(0xdff1f7, { roughness: 0.25, side: THREE.DoubleSide }), 0, 0, 0, smallVase);
+  [[0, 0.25, 0], [0.06, 0.21, 0.03], [-0.06, 0.21, -0.02], [0.02, 0.2, -0.06], [-0.02, 0.28, 0.04], [0.05, 0.27, -0.03]].forEach(([fx, fy, fz]) => {
+    cylinder(0.004, 0.004, fy - 0.08, 0x6aa85a, fx * 0.5, (fy + 0.08) / 2, fz * 0.5, smallVase).castShadow = false;
+    ball(0.034, 0xffffff, fx, fy, fz, smallVase);
+    ball(0.012, 0xf9d65c, fx, fy + 0.025, fz + 0.012, smallVase).castShadow = false;
+  });
   // 책장 위: 작은 액자와 덩굴 화분
   box(0.04, 0.3, 0.26, WOOD, 0, shelfH + 0.2, 0.45, shelf).rotation.z = 0.15;
   box(0.045, 0.22, 0.18, 0xf9c5d8, -0.005, shelfH + 0.2, 0.45, shelf).rotation.z = 0.15;
-  plant(0, shelfH + 0.03, -0.45, 0.45, shelf);
+  plant(0, shelfH + 0.045, -0.45, 0.45, shelf, 10);
   vine(-0.22, shelfH, -0.6, 0.7, shelf);
   vine(-0.22, shelfH, -0.3, 0.45, shelf);
+  contact(halfW - 0.4, -1.65, 1.0, 2.3);
 
   // ── 방석 ───────────────────────────────────────
-  const pouf = ball(0.42, 0xf9d65c, 2.95, 0.13, 0.35);
-  pouf.scale.y = 0.36;
-  ball(0.05, 0xe9bd3e, 2.95, 0.27, 0.35).scale.y = 0.4;
+  const pouf = addGroup(2.95, 0, 0.35, group);
+  turned(smoothProfile([[0, 0], [0.3, 0.005], [0.43, 0.05], [0.47, 0.14], [0.42, 0.24], [0.28, 0.29], [0.06, 0.285], [0, 0.27]]), fabric(0xf9d65c), 0, 0, 0, pouf);
+  ball(0.045, 0xe9bd3e, 0, 0.275, 0, pouf).scale.y = 0.45;
+  contact(2.95, 0.35, 1.25, 1.25);
 
   // ── 문 (앞벽) ──────────────────────────────────
-  const door = sub(DOOR_X, 0, front);
-  box(1.24, 2.26, 0.1, WOOD_DARK, 0, 1.13, -0.03, door);
-  box(1.0, 2.1, 0.08, WOOD, 0, 1.05, -0.07, door);
-  for (const [py, ph] of [[1.52, 0.9], [0.52, 0.72]]) box(0.74, ph, 0.03, WOOD_LIGHT, 0, py, -0.11, door);
-  ball(0.045, 0xf2c94c, -0.37, 1.02, -0.14, door);
-  cylinder(0.02, 0.02, 0.06, 0xf2c94c, -0.37, 1.02, -0.11, door).rotation.x = Math.PI / 2;
-  box(1.3, 0.014, 0.7, 0xc98f6a, 0, 0.008, -0.5, door).castShadow = false;
-  box(1.1, 0.016, 0.5, 0xe3b08a, 0, 0.01, -0.5, door).castShadow = false;
-  // 문 옆: 옷걸이와 작은 액자
-  const rack = sub(DOOR_X + 1.25, 0, front - 0.04);
-  box(0.7, 0.1, 0.04, WOOD, 0, 1.75, 0, rack);
-  for (const hx of [-0.24, 0, 0.24]) cylinder(0.018, 0.018, 0.1, WOOD_DARK, hx, 1.75, -0.06, rack).rotation.x = Math.PI / 2;
-  box(0.34, 0.62, 0.06, 0xf7b6c8, -0.24, 1.42, -0.08, rack); // 걸어 둔 앞치마
-  box(0.56, 0.72, 0.05, WOOD, DOOR_X - 1.35, 1.7, front - 0.03);
-  box(0.44, 0.6, 0.052, 0xcfe6a8, DOOR_X - 1.35, 1.7, front - 0.032);
-  ball(0.09, 0xf9c5d8, DOOR_X - 1.35, 1.72, front - 0.06).scale.z = 0.2;
+  const door = addGroup(DOOR_X, 0, front, group);
+  box(1.24, 2.26, 0.1, WOOD_DARK, 0, 1.13, -0.03, door, 0.02);
+  box(1.0, 2.1, 0.08, WOOD, 0, 1.05, -0.07, door, 0.02);
+  for (const [py, ph] of [[1.52, 0.9], [0.52, 0.72]]) box(0.74, ph, 0.03, WOOD_LIGHT, 0, py, -0.11, door, 0.012);
+  ball(0.045, 0xf2c94c, -0.37, 1.02, -0.15, door);
+  cylinder(0.02, 0.02, 0.06, 0xf2c94c, -0.37, 1.02, -0.12, door).rotation.x = Math.PI / 2;
+  box(1.3, 0.016, 0.7, 0xc98f6a, 0, 0.008, -0.5, door, 0.006).castShadow = false;
+  box(1.1, 0.018, 0.5, 0xe3b08a, 0, 0.01, -0.5, door, 0.006).castShadow = false;
+  // 문 옆: 옷걸이와 액자 (완성한 그림을 거는 자리)
+  const rack = addGroup(DOOR_X + 1.25, 0, front - 0.04, group);
+  box(0.7, 0.1, 0.04, WOOD, 0, 1.75, 0, rack, 0.015);
+  for (const hx of [-0.24, 0, 0.24]) {
+    cylinder(0.014, 0.014, 0.1, WOOD_DARK, hx, 1.75, -0.06, rack).rotation.x = Math.PI / 2;
+    ball(0.024, WOOD_DARK, hx, 1.75, -0.11, rack);
+  }
+  const apron = add(curtainGeometry(0.36, 0.66, { folds: 2, depth: 0.02 }), keep(new THREE.MeshStandardMaterial({ color: 0xf7b6c8, map: linen, roughness: 1, side: THREE.DoubleSide })), rack);
+  apron.position.set(-0.24, 1.75, -0.09);
+  const hung = keep(new THREE.TextureLoader().load(`${import.meta.env.BASE_URL}paintings/hill-house/reference.png`));
+  hung.colorSpace = THREE.SRGBColorSpace;
+  frame(DOOR_X - 1.5, 1.7, front, 0.8, 0.6, hung, -1);
+  frame(DOOR_X - 2.9, 1.7, front, 0.5, 0.66, flowerPainting('#d9c8ee', 14), -1);
 
   // ── 조명 ───────────────────────────────────────
-  group.add(new THREE.HemisphereLight(0xfff6e8, 0xe9c9a4, 1.15));
-  group.add(new THREE.AmbientLight(0xfff3e4, 0.5));
+  group.add(new THREE.HemisphereLight(0xfff6e8, 0xe9c9a4, 1.25));
+  group.add(new THREE.AmbientLight(0xfff3e4, 0.55));
   // 방 안을 은은하게 밝히는 등 (그림자 없음)
-  const fill = new THREE.PointLight(0xffe7c8, 6, 0, 1.6);
-  fill.position.set(0.3, height - 0.5, 0.8);
-  group.add(fill);
-  const fillFront = new THREE.PointLight(0xffe7c8, 5, 0, 1.6);
-  fillFront.position.set(0.3, height - 0.5, 4.2);
-  group.add(fillFront);
+  for (const z of [0.8, 4.2]) {
+    const fill = new THREE.PointLight(0xffe7c8, z < 2 ? 6 : 5, 0, 1.6);
+    fill.position.set(0.3, height - 0.5, z);
+    group.add(fill);
+  }
   // 창밖에서 들어오는 햇빛
-  const sun = new THREE.DirectionalLight(0xffe6bd, 2.4);
+  const sun = new THREE.DirectionalLight(0xffe2b0, 2.7);
   sun.position.set(winX + 4.2, 7.2, back - 6.5);
   sun.target.position.set(winX - 1.7, 0, 0.2);
   sun.castShadow = true;
@@ -504,10 +795,13 @@ export function buildAtelierRoom(): AtelierRoom {
   sun.shadow.camera.bottom = -9;
   sun.shadow.camera.near = 1;
   sun.shadow.camera.far = 30;
-  sun.shadow.bias = -0.0008;
+  sun.shadow.bias = -0.0004;
   sun.shadow.normalBias = 0.03;
+  sun.shadow.radius = 5;
+  sun.shadow.blurSamples = 16;
   group.add(sun, sun.target);
 
+  let time = 0;
   return {
     group,
     bounds: { minX: -3.55, maxX: 3.55, minZ: -2.35, maxZ: front - 0.45 },
@@ -524,7 +818,7 @@ export function buildAtelierRoom(): AtelierRoom {
       { x: 1.2, z: back + 0.52, r: 0.5 },
       { x: 2.6, z: back + 0.72, r: 0.52 },
       { x: halfW - 0.2, z: -1.65, r: 1.05 },
-      { x: 2.95, z: 0.35, r: 0.48 },
+      { x: 2.95, z: 0.35, r: 0.5 },
     ],
     cameraBox: {
       minX: -halfW + 0.3,
@@ -539,7 +833,7 @@ export function buildAtelierRoom(): AtelierRoom {
     spawn: { x: 1.3, z: 1.25 },
     stool: {
       approach: { x: stoolAt.x + 0.78, z: stoolAt.z + 0.3 },
-      seat: new THREE.Vector3(stoolAt.x, 0.585, stoolAt.z),
+      seat: new THREE.Vector3(stoolAt.x, 0.6, stoolAt.z),
       heading: EASEL.turn + Math.PI,
     },
     board,
@@ -547,12 +841,28 @@ export function buildAtelierRoom(): AtelierRoom {
     hotspots: [
       { id: 'easel', label: '이젤', icon: '🎨', position: new THREE.Vector3(EASEL.x, 2.12, EASEL.z), available: true },
       { id: 'stool', label: '의자', icon: '🪑', position: new THREE.Vector3(stoolAt.x, 0.9, stoolAt.z), available: true },
-      { id: 'window', label: '창가에서 차 마시기', icon: '☕', position: new THREE.Vector3(2.6, 0.9, back + 0.72), available: false },
+      { id: 'window', label: '창가에서 차 마시기', icon: '☕', position: new THREE.Vector3(2.6, 0.95, back + 0.72), available: false },
       { id: 'bookshelf', label: '책 읽기', icon: '📖', position: new THREE.Vector3(halfW - 0.55, 1.75, -1.65), available: false },
     ],
+    update(dt: number) {
+      time += dt;
+      // 꽃잎이 흔들리며 떨어지고, 땅에 닿으면 위에서 다시 내려온다
+      for (let k = 0; k < PETALS; k++) {
+        const phase = petalSeed[k * 2];
+        petalPos[k * 3] += Math.sin(time * 0.9 + phase) * 0.35 * dt + 0.12 * dt;
+        petalPos[k * 3 + 1] -= petalSeed[k * 2 + 1] * dt;
+        petalPos[k * 3 + 2] += Math.cos(time * 0.7 + phase) * 0.15 * dt;
+        if (petalPos[k * 3 + 1] < 0) petalPos[k * 3 + 1] = 6;
+        if (petalPos[k * 3] > winX + 4.5) petalPos[k * 3] -= 9;
+      }
+      petalGeometry.attributes.position.needsUpdate = true;
+      // 등불이 조금씩 일렁인다
+      const flicker = 1 + Math.sin(time * 7.3) * 0.04 + Math.sin(time * 12.1) * 0.03;
+      glow.intensity = 2.4 * flicker;
+      glowSprite.material.opacity = 0.85 * flicker;
+    },
     dispose() {
-      geometries.forEach((g) => g.dispose());
-      materials.forEach((m) => m.dispose());
+      disposables.forEach((d) => d.dispose());
     },
   };
 }

@@ -1,7 +1,8 @@
 import * as THREE from 'three';
+import type { OutlineEffect } from 'three/addons/effects/OutlineEffect.js';
 import { Character3D } from './Character3D';
 import { clampDestination, distanceInsideBox, stepToward, type Ground } from './movement';
-import { buildAtelierRoom, type AtelierRoom, type Hotspot3D } from './room';
+import { buildAtelierRoom, configureRenderer, createOutline, type AtelierRoom, type Hotspot3D } from './room';
 
 /** 걷는 속도 (미터 / 초) */
 const WALK_SPEED = 2.6;
@@ -31,6 +32,8 @@ export interface Atelier3DEvents {
  */
 export class Atelier3DView {
   private readonly renderer: THREE.WebGLRenderer;
+  /** 물체 둘레에 가는 갈색 선을 둘러 일러스트 같은 느낌을 낸다. */
+  private readonly outline: OutlineEffect;
   private readonly scene = new THREE.Scene();
   private readonly camera = new THREE.PerspectiveCamera(42, 1, 0.1, 80);
   private readonly room: AtelierRoom;
@@ -60,9 +63,8 @@ export class Atelier3DView {
     options: { startSeated: boolean },
   ) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-    this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFShadowMap;
+    configureRenderer(this.renderer);
+    this.outline = createOutline(this.renderer);
     this.scene.background = new THREE.Color(0xf6e7d4);
 
     this.room = buildAtelierRoom();
@@ -328,6 +330,7 @@ export class Atelier3DView {
     }
 
     this.character.update(dt);
+    this.room.update(dt);
     const g = this.character.group;
     if (this.seated) {
       const seat = this.room.stool.seat;
@@ -340,7 +343,7 @@ export class Atelier3DView {
     g.rotation.y += turn * Math.min(1, dt * 12);
 
     this.placeCamera(Math.min(1, dt * 6));
-    this.renderer.render(this.scene, this.camera);
+    this.outline.render(this.scene, this.camera);
     this.placeSpots();
   };
 

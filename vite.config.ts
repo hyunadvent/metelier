@@ -62,6 +62,9 @@ function paintingEditorSave(): Plugin {
 
 export default defineConfig({
   plugins: [react(), paintingEditorSave()],
+  // three 와 그 부가 모듈이 개발 서버에서 따로 묶여 three 가 두 번 불러와지는 것을 막는다.
+  resolve: { dedupe: ['three'] },
+  optimizeDeps: { include: ['three', 'three/addons/geometries/RoundedBoxGeometry.js', 'three/addons/effects/OutlineEffect.js'] },
   test: {
     environment: 'node',
     include: ['tests/**/*.test.ts'],

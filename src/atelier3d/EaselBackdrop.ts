@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { buildAtelierRoom, type AtelierRoom } from './room';
+import type { OutlineEffect } from 'three/addons/effects/OutlineEffect.js';
+import { buildAtelierRoom, configureRenderer, createOutline, type AtelierRoom } from './room';
 
 /** 화면 좌표의 사각형 */
 export interface ScreenRect {
@@ -22,12 +23,13 @@ export class EaselBackdrop {
   private readonly scene = new THREE.Scene();
   private readonly camera = new THREE.PerspectiveCamera(FOV, 1, 0.05, 80);
   private readonly room: AtelierRoom;
+  private readonly outline: OutlineEffect;
+  private redraw = 0;
 
   constructor(host: HTMLElement) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-    this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFShadowMap;
+    configureRenderer(this.renderer);
+    this.outline = createOutline(this.renderer);
     this.scene.background = new THREE.Color(0xf6e7d4);
     this.room = buildAtelierRoom();
     this.scene.add(this.room.group);
@@ -61,10 +63,14 @@ export class EaselBackdrop {
     camera.position.copy(center).addScaledVector(normal, distance + 0.02);
     camera.translateX(-(paper.x + paper.width / 2 - screenW / 2) * unitsPerPixel);
     camera.translateY((paper.y + paper.height / 2 - screenH / 2) * unitsPerPixel);
-    this.renderer.render(this.scene, camera);
+    this.outline.render(this.scene, camera);
+    // 액자의 그림처럼 늦게 불러와지는 텍스처가 반영되도록 잠시 뒤 한 번 더 그린다.
+    window.clearTimeout(this.redraw);
+    this.redraw = window.setTimeout(() => this.outline.render(this.scene, camera), 600);
   }
 
   destroy(): void {
+    window.clearTimeout(this.redraw);
     this.room.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();
