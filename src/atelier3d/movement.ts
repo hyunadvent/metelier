@@ -132,3 +132,22 @@ export function stepJump(jump: Jump, dt: number): Jump {
   if (height <= 0) return { height: 0, velocity: 0 };
   return { height, velocity: jump.velocity - JUMP_GRAVITY * dt };
 }
+
+/** 화면 위의 점 */
+export interface ScreenPoint {
+  x: number;
+  y: number;
+}
+
+/**
+ * 화면에서 누른 점이 캐릭터 위인가. 캐릭터를 발끝에서 머리까지 이은 굵은 선(캡슐)으로 본다.
+ * 손가락으로도 누르기 쉽도록 둘레에 여유를 둔다.
+ * @param radius 캐릭터 몸의 반지름 (화면 픽셀)
+ */
+export function isOnCharacter(tap: ScreenPoint, feet: ScreenPoint, head: ScreenPoint, radius: number, padding = 14): boolean {
+  const dx = head.x - feet.x;
+  const dy = head.y - feet.y;
+  const lenSq = dx * dx + dy * dy;
+  const t = lenSq > 0 ? Math.min(1, Math.max(0, ((tap.x - feet.x) * dx + (tap.y - feet.y) * dy) / lenSq)) : 0;
+  return Math.hypot(tap.x - (feet.x + t * dx), tap.y - (feet.y + t * dy)) <= radius + padding;
+}

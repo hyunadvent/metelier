@@ -12,7 +12,7 @@ interface Atelier3DScreenProps {
 }
 
 const HINTS: Record<Activity | 'none', string> = {
-  none: '바닥을 누르거나 WASD로 걸어요 · 스페이스로 점프 · 화면을 끌면 둘러봐요 · 표시를 눌러 보세요',
+  none: '바닥을 누르거나 WASD로 걷기 · 캐릭터나 스페이스로 점프 · 끌어서 둘러보기',
   paint: '이젤을 눌러 색칠을 시작하세요',
   tea: '창밖을 보며 차를 마시고 있어요 · 바닥을 누르면 일어나요',
   read: '책을 읽고 있어요 · 바닥을 누르면 일어나요',

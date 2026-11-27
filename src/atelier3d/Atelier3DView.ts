@@ -6,6 +6,7 @@ import {
   approachCamera,
   clampDestination,
   distanceInsideBox,
+  isOnCharacter,
   JUMP_SPEED,
   stepJump,
   stepToward,
@@ -59,7 +60,7 @@ export interface Atelier3DEvents {
 
 /**
  * 3D 화실 화면: 캐릭터를 뒤에서 따라가는 3인칭 시점.
- * - 바닥을 누르거나 WASD/방향키로 걷고, 스페이스로 점프한다.
+ * - 바닥을 누르거나 WASD/방향키로 걷고, 스페이스나 캐릭터를 눌러 점프한다.
  * - 화면을 끌면 360도로 둘러보고, 휠로 가까이/멀리 본다. 카메라는 방 밖으로 나가지 않는다.
  * - 의자를 누르면 앉고, 앉아서 이젤을 누르면 색칠을 시작한다.
  * - 창가를 누르면 방석에 앉아 차를 마시고, 책장을 누르면 책을 골라 방석에 앉아 읽는다.
@@ -254,6 +255,29 @@ export class Atelier3DView {
     }
   }
 
+  /** 점프한다. 앉아 있거나 책을 고르는 중이거나 이미 떠 있으면 뛰지 않는다. */
+  private tryJump(): void {
+    if (this.activity || this.wait || this.jump.height > 0) return;
+    this.jump = { height: 0, velocity: JUMP_SPEED };
+  }
+
+  /** 화면의 한 점이 캐릭터 위인가. */
+  private isCharacterAt(clientX: number, clientY: number): boolean {
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    const base = this.character.group.position;
+    const toScreen = (height: number) => {
+      const p = new THREE.Vector3(base.x, base.y + height, base.z).project(this.camera);
+      return { x: (p.x * 0.5 + 0.5) * rect.width, y: (-p.y * 0.5 + 0.5) * rect.height, behind: p.z > 1 };
+    };
+    const feet = toScreen(0.1);
+    const head = toScreen(1.15);
+    if (feet.behind || head.behind) return false;
+    // 몸의 반지름(약 0.3m)이 화면에서 차지하는 픽셀 수
+    const distance = this.camera.position.distanceTo(base);
+    const pixelsPerMeter = rect.height / 2 / (Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2)) * Math.max(0.1, distance));
+    return isOnCharacter({ x: clientX - rect.left, y: clientY - rect.top }, feet, head, 0.3 * pixelsPerMeter);
+  }
+
   /** 화면의 한 점 아래에 있는 바닥 위치. 바닥을 가리키지 않으면 null. */
   private groundAt(clientX: number, clientY: number): Ground | null {
     const rect = this.renderer.domElement.getBoundingClientRect();
@@ -301,6 +325,11 @@ export class Atelier3DView {
     if (!d || e.pointerId !== d.id) return;
     this.drag = null;
     if (d.moved) return;
+    // 캐릭터를 누르면 점프한다 (키보드가 없는 터치 기기에서 뛰는 방법).
+    if (this.isCharacterAt(e.clientX, e.clientY)) {
+      this.tryJump();
+      return;
+    }
     const ground = this.groundAt(e.clientX, e.clientY);
     if (ground) this.walkTo(clampDestination(ground, this.room));
   };
@@ -320,9 +349,7 @@ export class Atelier3DView {
     if (e.code === 'Space') {
       // 스페이스: 점프. 앉아 있거나 책을 고르는 중이거나 이미 떠 있으면 뛰지 않는다.
       e.preventDefault();
-      if (!e.repeat && !this.activity && !this.wait && this.jump.height === 0) {
-        this.jump = { height: 0, velocity: JUMP_SPEED };
-      }
+      if (!e.repeat) this.tryJump();
       return;
     }
     this.keys.add(e.key.toLowerCase());

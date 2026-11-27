@@ -3,6 +3,7 @@ import {
   approachCamera,
   clampDestination,
   distanceInsideBox,
+  isOnCharacter,
   JUMP_GRAVITY,
   JUMP_SPEED,
   pushOutOfObstacles,
@@ -126,5 +127,23 @@ describe('점프', () => {
 
   it('바닥에 서 있으면 그대로 있다', () => {
     expect(stepJump({ height: 0, velocity: 0 }, 0.016)).toEqual({ height: 0, velocity: 0 });
+  });
+});
+
+describe('캐릭터 누르기', () => {
+  const feet = { x: 400, y: 500 };
+  const head = { x: 400, y: 380 };
+
+  it('몸과 머리, 그 둘레의 여유까지 캐릭터로 본다', () => {
+    expect(isOnCharacter({ x: 400, y: 440 }, feet, head, 30)).toBe(true); // 몸 가운데
+    expect(isOnCharacter({ x: 425, y: 385 }, feet, head, 30)).toBe(true); // 머리 옆
+    expect(isOnCharacter({ x: 440, y: 450 }, feet, head, 30)).toBe(true); // 반지름 밖이지만 여유 안
+    expect(isOnCharacter({ x: 400, y: 540 }, feet, head, 30)).toBe(true); // 발 바로 아래
+  });
+
+  it('떨어진 곳은 캐릭터가 아니다', () => {
+    expect(isOnCharacter({ x: 460, y: 440 }, feet, head, 30)).toBe(false);
+    expect(isOnCharacter({ x: 400, y: 320 }, feet, head, 30)).toBe(false);
+    expect(isOnCharacter({ x: 400, y: 560 }, feet, head, 30)).toBe(false);
   });
 });

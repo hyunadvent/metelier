@@ -60,6 +60,8 @@
   box-sizing: border-box;
   font-size: 16px;
   text-align: center;
+  /* 낱말 가운데에서 줄이 바뀌지 않게 한다 */
+  word-break: keep-all;
   pointer-events: none;
 }
 
