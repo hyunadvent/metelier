@@ -98,40 +98,32 @@ export class Character3D {
     // 머리
     this.head.position.y = 1.24;
     this.upper.add(this.head);
-    const skull = mesh(new THREE.SphereGeometry(0.33, 32, 24), fur, this.head);
-    skull.scale.set(1.06, 0.94, 1);
-    // 볼록한 볼과 주둥이
-    for (const x of [-0.17, 0.17]) {
-      const cheek = mesh(new THREE.SphereGeometry(0.13, 16, 12), fur, this.head);
-      cheek.position.set(x, -0.1, 0.2);
-    }
-    const muzzle = mesh(new THREE.SphereGeometry(0.1, 16, 12), white, this.head);
-    muzzle.position.set(0, -0.09, 0.275);
-    muzzle.scale.set(1.25, 0.8, 0.7);
-    const nose = mesh(new THREE.SphereGeometry(0.032, 10, 8), pink, this.head);
-    nose.position.set(0, -0.045, 0.34);
-    nose.scale.set(1.2, 0.8, 0.8);
+    // 얼굴은 동그란 공 하나로 단순하게 둔다.
+    mesh(new THREE.SphereGeometry(0.33, 32, 24), fur, this.head);
+    const nose = mesh(new THREE.SphereGeometry(0.03, 10, 8), pink, this.head);
+    nose.position.set(0, -0.045, 0.325);
+    nose.scale.set(1.2, 0.8, 0.6);
     // 웃는 입
     for (const side of [-1, 1]) {
-      const smile = mesh(new THREE.TorusGeometry(0.03, 0.006, 6, 12, Math.PI), dark, this.head);
-      smile.position.set(side * 0.03, -0.085, 0.335);
+      const smile = mesh(new THREE.TorusGeometry(0.028, 0.005, 6, 12, Math.PI), dark, this.head);
+      smile.position.set(side * 0.028, -0.085, 0.317);
       smile.rotation.z = Math.PI;
     }
     for (const x of [-0.125, 0.125]) {
       // 눈과 눈 속의 반짝임, 깜빡일 때 덮는 눈꺼풀
       const eye = mesh(new THREE.SphereGeometry(0.043, 14, 12), dark, this.head);
-      eye.position.set(x, 0.035, 0.295);
-      eye.scale.set(0.9, 1.15, 0.6);
-      mesh(new THREE.SphereGeometry(0.014, 8, 6), white, this.head).position.set(x + 0.014, 0.055, 0.322);
+      eye.position.set(x, 0.035, 0.298);
+      eye.scale.set(0.9, 1.15, 0.5);
+      mesh(new THREE.SphereGeometry(0.014, 8, 6), white, this.head).position.set(x + 0.014, 0.055, 0.32);
       const lid = mesh(new THREE.SphereGeometry(0.05, 12, 10), fur, this.head);
-      lid.position.set(x, 0.04, 0.297);
+      lid.position.set(x, 0.04, 0.299);
       lid.scale.set(1.0, 1.2, 0.66);
       lid.visible = false;
       lid.castShadow = false;
       this.lids.push(lid);
       const blush = mesh(new THREE.SphereGeometry(0.06, 12, 10), pink, this.head);
-      blush.position.set(x * 1.75, -0.07, 0.235);
-      blush.scale.set(1, 0.55, 0.35);
+      blush.position.set(x * 1.75, -0.07, 0.232);
+      blush.scale.set(1, 0.6, 0.3);
       // 귀: 뿌리를 축으로 살짝 흔들린다
       const ear = new THREE.Group();
       ear.position.set(x * 1.05, 0.27, -0.02);
