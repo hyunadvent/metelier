@@ -378,3 +378,26 @@ describe('살색', () => {
     expect(p.seg.ids[62 * 2 * p.width + 122 * 2]).toBe(face);
   });
 });
+
+describe('살색 가려내기', () => {
+  const isSkin = (r: number, g: number, b: number) => skinMask(new Uint8Array([r, g, b, 255]))[0] === 1;
+
+  it('밝은 피부, 그늘진 피부, 어두운 피부를 살색으로 본다', () => {
+    expect(isSkin(217, 168, 140)).toBe(true);
+    expect(isSkin(229, 185, 158)).toBe(true);
+    expect(isSkin(176, 128, 104)).toBe(true);
+    expect(isSkin(120, 80, 60)).toBe(true);
+  });
+
+  it('노란 전등과 금색 장식은 살색이 아니다', () => {
+    expect(isSkin(224, 211, 133)).toBe(false);
+    expect(isSkin(245, 206, 128)).toBe(false);
+    expect(isSkin(250, 220, 90)).toBe(false);
+  });
+
+  it('회색, 파랑, 선명한 빨강은 살색이 아니다', () => {
+    expect(isSkin(200, 200, 200)).toBe(false);
+    expect(isSkin(60, 110, 200)).toBe(false);
+    expect(isSkin(254, 138, 134)).toBe(false);
+  });
+});

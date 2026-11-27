@@ -81,8 +81,9 @@ const toHex = (r: number, g: number, b: number) =>
 
 /**
  * 원본 사진에서 살색을 구한다.
- * 살색 면에 속한 픽셀 가운데 실제로 살색인 것만 보고, 그중 어두운 쪽 40% (그늘, 주름, 머리카락 그림자)는 빼고 평균 낸다.
- * 사람 눈이 "이 사람의 피부색" 으로 느끼는 것은 빛을 받은 쪽의 색이기 때문이다.
+ * 살색 면에 속한 픽셀 가운데 실제로 살색인 것만 보고, 밝기 순으로 가운데 구간(35% ~ 85%)만 평균 낸다.
+ * 어두운 쪽(그늘, 주름, 머리카락 그림자)과 가장 밝은 쪽(빛이 번들거리는 곳)을 빼야
+ * 사람 눈이 "이 사람의 피부색" 으로 느끼는 색에 가깝다.
  */
 function skinTone(rgba: Uint8ClampedArray, labels: Uint8Array, skin: Uint8Array, skinLabel: number): [number, number, number] | null {
   const brightness: number[] = [];
@@ -92,14 +93,16 @@ function skinTone(rgba: Uint8ClampedArray, labels: Uint8Array, skin: Uint8Array,
   }
   if (brightness.length === 0) return null;
   const sorted = Float64Array.from(brightness).sort();
-  const cut = sorted[Math.floor(sorted.length * 0.4)];
+  const low = sorted[Math.floor(sorted.length * 0.35)];
+  const high = sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.85))];
   let r = 0;
   let g = 0;
   let b = 0;
   let n = 0;
   for (let i = 0; i < labels.length; i++) {
     if (labels[i] !== skinLabel || !skin[i]) continue;
-    if (0.299 * rgba[i * 4] + 0.587 * rgba[i * 4 + 1] + 0.114 * rgba[i * 4 + 2] < cut) continue;
+    const value = 0.299 * rgba[i * 4] + 0.587 * rgba[i * 4 + 1] + 0.114 * rgba[i * 4 + 2];
+    if (value < low || value > high) continue;
     r += rgba[i * 4];
     g += rgba[i * 4 + 1];
     b += rgba[i * 4 + 2];

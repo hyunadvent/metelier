@@ -49,7 +49,7 @@ export function gaussianBlur(src: Float32Array, width: number, height: number, s
 
 /**
  * 살색인 픽셀을 표시한다. 밝기와 무관한 색 성분(Cb, Cr)의 범위로 가려내므로
- * 밝은 피부와 어두운 피부, 그늘진 피부를 함께 잡는다. 나무나 베이지색 벽도 잡힐 수 있다.
+ * 밝은 피부와 어두운 피부, 그늘진 피부를 함께 잡는다. 노란색은 빼지만, 나무나 베이지색 벽은 잡힐 수 있다.
  */
 export function skinMask(rgba: Uint8ClampedArray | Uint8Array): Uint8Array {
   const mask = new Uint8Array(rgba.length / 4);
@@ -59,7 +59,11 @@ export function skinMask(rgba: Uint8ClampedArray | Uint8Array): Uint8Array {
     const b = rgba[i * 4 + 2];
     const cb = 128 - 0.168736 * r - 0.331264 * g + 0.5 * b;
     const cr = 128 + 0.5 * r - 0.418688 * g - 0.081312 * b;
-    if (cb >= 77 && cb <= 127 && cr >= 135 && cr <= 175 && r > 60 && r > b && r - Math.min(g, b) > 12) mask[i] = 1;
+    if (!(cb >= 77 && cb <= 127 && cr >= 135 && cr <= 175 && r > 60 && r > b && r - Math.min(g, b) > 12)) continue;
+    // 노란 것(금색 장식, 노란 전등)은 뺀다: 살색은 빨강에서 주황 사이의 색조이고, 노랑은 초록 성분이 그보다 많다.
+    // 색조로 치면 약 34도까지를 살색으로 본다 (노랑은 50~60도).
+    if (g - b > 0.57 * (r - b)) continue;
+    mask[i] = 1;
   }
   return mask;
 }
