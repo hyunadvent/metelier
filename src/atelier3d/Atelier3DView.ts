@@ -271,8 +271,8 @@ export class Atelier3DView {
     d.y = e.clientY;
     this.cameraGoal = null;
     // 좌우로는 제한 없이 한 바퀴 돌 수 있다.
-    this.azimuth -= dx * 0.006;
-    this.polar = Math.min(CAMERA.maxPolar, Math.max(CAMERA.minPolar, this.polar - dy * 0.005));
+    this.azimuth -= dx * 0.0042;
+    this.polar = Math.min(CAMERA.maxPolar, Math.max(CAMERA.minPolar, this.polar - dy * 0.0035));
   };
 
   private onPointerUp = (e: PointerEvent): void => {
