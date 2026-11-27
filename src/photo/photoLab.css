@@ -1,0 +1,46 @@
+.photo-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  height: 100%;
+  overflow: auto;
+}
+
+.photo-grid figure {
+  margin: 0;
+  min-width: 0;
+}
+
+.photo-grid canvas {
+  display: block;
+  width: 100%;
+  border: 1px solid #d8cdbf;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.photo-grid figcaption {
+  padding: 4px 2px 0;
+  color: #6b5a4b;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.photo-palette {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.photo-palette span {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 2px solid rgb(91 70 54 / 25%);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 800;
+  text-shadow: 0 0 3px rgb(0 0 0 / 70%);
+}

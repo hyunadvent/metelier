@@ -2,3 +2,6 @@ node_modules/
 dist/
 *.local
 .vite/
+
+# 사진 변환 시험 화면이 저장하는 시험용 그림
+public/paintings/photo-test/
