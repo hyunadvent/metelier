@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { absorb, bilateral, components, modeFilter, quantize, seededRandom, toLab, upscaleLabels } from '../src/photo/imageOps';
-import { closeHoles, inkLines, skinMask } from '../src/photo/faceLines';
+import { closeHoles, featureLines, luminance, skinMask } from '../src/photo/faceLines';
 import { fitSize, photoToPainting } from '../src/photo/photoToPainting';
 
 const W = 120;
@@ -203,12 +203,25 @@ describe('얼굴의 눈·코·입을 선으로 남기기', () => {
     expect(closed[10 * FW + 10]).toBe(0);
   });
 
-  it('주변보다 어두운 가는 무늬만 선으로 뽑는다', () => {
-    const ink = inkLines(facePhoto(), FW, FH, 4);
+  it('살색 면 안의 어두운 가는 무늬만 선으로 뽑는다', () => {
+    const photo = facePhoto();
+    const mask = closeHoles(skinMask(photo), FW, FH, 4);
+    const ink = featureLines(luminance(photo), FW, FH, mask, 1.2);
     expect(ink[69 * FW + 52]).toBeGreaterThan(0.8); // 눈
     expect(ink[101 * FW + 70]).toBeGreaterThan(0.8); // 입
     expect(ink[85 * FW + 70]).toBe(0); // 볼 한가운데
     expect(ink[10 * FW + 10]).toBe(0); // 벽
+    expect(ink[80 * FW + 160]).toBe(0); // 파란 원 안의 어두운 줄: 살색이 아니므로 선이 되지 않는다
+  });
+
+  it('점처럼 작은 얼룩은 선으로 남기지 않는다', () => {
+    const photo = facePhoto();
+    // 볼에 2 x 2 짜리 어두운 점을 찍는다 (주근깨나 잡티)
+    for (const [x, y] of [[40, 90], [41, 90], [40, 91], [41, 91]]) photo.set([60, 45, 40, 255], (y * FW + x) * 4);
+    const mask = closeHoles(skinMask(photo), FW, FH, 4);
+    const ink = featureLines(luminance(photo), FW, FH, mask, 1.6);
+    expect(ink[90 * FW + 40]).toBe(0);
+    expect(ink[69 * FW + 52]).toBeGreaterThan(0.8); // 눈은 그대로 남는다
   });
 
   it('눈과 입은 칸이 되지 않고 얼굴 칸 위의 선으로 남는다', async () => {

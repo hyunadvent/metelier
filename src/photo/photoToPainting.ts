@@ -2,7 +2,7 @@
 // 모든 계산은 브라우저 안에서 하며, 사진을 어디에도 보내지 않는다.
 import type { PaletteEntry } from '../coloring/painting';
 import { describeRegions, type RegionInfo, type Segmentation } from '../editor/segment';
-import { closeHoles, dilate, fillHolesWithSkin, flattenSkin, inkLines, skinMask, upscaleMap } from './faceLines';
+import { closeHoles, erode, featureLines, fillHolesWithSkin, flattenSkin, luminance, skinMask, upscaleMap } from './faceLines';
 import { absorb, bilateral, components, modeFilter, quantize, toLab, upscaleLabels } from './imageOps';
 
 export interface PhotoOptions {
@@ -100,6 +100,7 @@ function drawLines(ids: Int32Array | Uint16Array, width: number, height: number,
 /**
  * 사진을 색칠 그림으로 바꾼다.
  * @param rgba 작업 크기로 맞춘 사진의 픽셀. 긴 변이 options.workSize 이하여야 한다.
+ * @param detail 결과 크기(긴 변 options.outputSize)로 맞춘 같은 사진. 주면 얼굴의 선을 더 정밀하게 뽑는다.
  * @param onStage 단계가 바뀔 때마다 불린다. 화면에 진행 상황을 보여 주고 싶으면 여기서 기다렸다가 돌아오면 된다.
  */
 export async function photoToPainting(
@@ -108,6 +109,7 @@ export async function photoToPainting(
   height: number,
   options: PhotoOptions = DEFAULT_PHOTO_OPTIONS,
   onStage?: (stage: PhotoStage) => void | Promise<void>,
+  detail?: { width: number; height: number; rgba: Uint8ClampedArray },
 ): Promise<PhotoPainting> {
   // 1. 만화풍으로 다듬기: 윤곽은 남기고 자잘한 무늬를 뭉갠다
   await onStage?.('smooth');
@@ -146,7 +148,8 @@ export async function photoToPainting(
   labels = modeFilter(labels, width, height, 2, k);
 
   // 2-1. 얼굴: 눈·코·입을 칸이 아니라 선으로 남긴다
-  let ink: Float32Array | null = null;
+  // 선을 그려도 되는 곳(작업 크기)과, 얼굴의 크기를 짐작한 값
+  let face: { inside: Uint8Array; size: number } | null = null;
   if (options.faceLines) {
     // 얼굴 안의 무늬 크기에 맞춘 값. 사진의 긴 변에 비례한다.
     const reach = Math.max(4, Math.round(Math.max(width, height) / 130));
@@ -155,11 +158,11 @@ export async function photoToPainting(
     // 살색 안에 뚫린 작은 구멍(눈, 입, 콧구멍)을 얼굴과 같은 색 묶음으로 메운다
     fillHolesWithSkin(labels, skin, closed, width, height);
     // 얼굴과 팔을 한 가지 살색 면으로 만든다 (명암으로 쪼개진 칸을 없앤다)
-    flattenSkin(labels, closed, width, height, k);
-    // 그 자리에 원본의 어두운 가는 무늬를 선으로 남긴다. 살색 부근에서만 그린다.
-    const area = dilate(closed, width, height, 2);
-    ink = inkLines(rgba, width, height, reach);
-    for (let i = 0; i < ink.length; i++) if (!area[i]) ink[i] = 0;
+    const largest = flattenSkin(labels, closed, width, height, k);
+    // 가장 큰 살색 면의 넓이로 얼굴의 폭을 짐작한다. 한 면으로 만든 것이 없으면 사진 크기로 어림한다.
+    const size = largest > 0 ? Math.sqrt(largest) : Math.sqrt(width * height) * 0.25;
+    // 살색 면의 테두리(머리카락, 옷과 맞닿은 곳)는 뺀다: 거기는 칸의 경계선이 이미 있다
+    face = { inside: erode(closed, width, height, Math.max(2, Math.round(size / 22))), size };
   }
 
   // 3. 결과 크기로 늘린 뒤 칸을 정리한다
@@ -210,12 +213,23 @@ export async function photoToPainting(
   // 4. 선화와 번호
   await onStage?.('lines');
   const darkness = drawLines(comp.ids, out.width, out.height, Math.max(1.5, out.width / 850));
-  if (ink) {
-    // 얼굴의 선을 결과 크기로 늘려 선화에 더한다. 흐릿한 가장자리는 잘라 내 또렷한 선으로 만든다.
-    const big = upscaleMap(ink, width, height, out.width, out.height);
+  if (face) {
+    // 얼굴의 선은 결과 크기에서 뽑는다. 작업 크기에서 뽑아 늘리면 작은 얼굴의 선이 뭉개진다.
+    const up = out.width / width;
+    const lum =
+      detail && detail.width === out.width && detail.height === out.height
+        ? luminance(detail.rgba)
+        : upscaleMap(luminance(rgba), width, height, out.width, out.height);
+    const inside = new Float32Array(face.inside.length);
+    for (let i = 0; i < inside.length; i++) inside[i] = face.inside[i];
+    const insideBig = upscaleMap(inside, width, height, out.width, out.height);
+    const mask = new Uint8Array(insideBig.length);
+    for (let i = 0; i < mask.length; i++) mask[i] = insideBig[i] > 0.5 ? 1 : 0;
+    // 얼굴 폭에 비례해 선의 기본 굵기를 정한다. 작은 얼굴일수록 가는 선이 된다.
+    const sigma = Math.min(3.2, Math.max(1, (face.size * up) / 190));
+    const ink = featureLines(lum, out.width, out.height, mask, sigma);
     for (let i = 0; i < darkness.length; i++) {
-      const t = Math.min(1, Math.max(0, (big[i] - 0.42) / 0.3));
-      const line = Math.round(t * t * (3 - 2 * t) * 255);
+      const line = Math.round(ink[i] * 255);
       if (line > darkness[i]) darkness[i] = line;
     }
   }

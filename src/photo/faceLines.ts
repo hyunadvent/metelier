@@ -132,25 +132,6 @@ export function fillHolesWithSkin(labels: Uint8Array, skin: Uint8Array, closed: 
   }
 }
 
-/**
- * 주변보다 어두운 가는 무늬를 잉크 선으로 뽑는다 (0 = 없음, 1 = 진한 선).
- * 감은 눈, 눈썹, 콧구멍, 입술 사이, 손가락 사이처럼 살 위의 어두운 선이 여기에 잡힌다.
- * 넓고 부드러운 그늘은 주변과 밝기 차이가 완만해서 잡히지 않는다.
- * @param scale 무늬의 크기에 맞추는 값 (픽셀). 얼굴이 크게 찍힌 사진일수록 크게 준다.
- */
-export function inkLines(rgba: Uint8ClampedArray | Uint8Array, width: number, height: number, scale: number): Float32Array {
-  const lum = luminance(rgba);
-  const fine = gaussianBlur(lum, width, height, Math.max(0.7, scale * 0.12));
-  const broad = gaussianBlur(lum, width, height, Math.max(2.5, scale * 0.6));
-  const ink = new Float32Array(lum.length);
-  for (let i = 0; i < ink.length; i++) {
-    // 주변 평균보다 얼마나 어두운가. 밝은 곳일수록 같은 차이도 덜 눈에 띄므로 조금 더 요구한다.
-    const darker = broad[i] - fine[i] - 9 - broad[i] * 0.03;
-    ink[i] = Math.min(1, Math.max(0, darker / 18));
-  }
-  return ink;
-}
-
 /** 0~1 값의 지도를 더 큰 크기로 부드럽게 늘린다. */
 export function upscaleMap(src: Float32Array, width: number, height: number, outWidth: number, outHeight: number): Float32Array {
   const out = new Float32Array(outWidth * outHeight);
@@ -180,13 +161,15 @@ export function upscaleMap(src: Float32Array, width: number, height: number, out
  * 너무 큰 덩어리는 건드리지 않는다: 사진 대부분이 살색 계열(나무, 베이지색 벽)이면 얼굴이 아니기 때문이다.
  * labels 를 직접 고친다.
  * @param maxFraction 이 비율(사진 전체 대비)보다 큰 덩어리는 그대로 둔다
+ * @returns 한 면으로 만든 덩어리 가운데 가장 큰 것의 픽셀 수 (없으면 0). 얼굴의 크기를 짐작하는 데 쓴다.
  */
-export function flattenSkin(labels: Uint8Array, mask: Uint8Array, width: number, height: number, k: number, maxFraction = 0.12): void {
+export function flattenSkin(labels: Uint8Array, mask: Uint8Array, width: number, height: number, k: number, maxFraction = 0.12): number {
   const n = width * height;
   const seen = new Uint8Array(n);
   const stack = new Int32Array(n);
   const counts = new Uint32Array(k);
   const limit = n * maxFraction;
+  let largest = 0;
   for (let start = 0; start < n; start++) {
     if (!mask[start] || seen[start]) continue;
     // 이어진 살색 덩어리 하나를 모은다
@@ -223,5 +206,111 @@ export function flattenSkin(labels: Uint8Array, mask: Uint8Array, width: number,
     let best = 0;
     for (let c = 1; c < k; c++) if (counts[c] > counts[best]) best = c;
     for (const i of members) labels[i] = best;
+    if (size > largest) largest = size;
   }
+  return largest;
+}
+
+/**
+ * 얼굴의 특징을 가는 선으로 뽑는다 (0 = 없음, 1 = 진한 선). 결과 그림의 해상도에서 계산한다.
+ *
+ * 두 가지를 선으로 본다.
+ * - 가는 어두운 줄: 감은 눈, 눈썹, 입술 사이, 콧구멍, 손가락 사이 (가는 흐림과 중간 흐림의 차이)
+ * - 조금 더 큰 어두운 점: 뜬 눈의 눈동자, 벌린 입 (중간 흐림과 넓은 흐림의 차이)
+ * 밝기 차이를 주변 밝기로 나눠 보므로 그늘진 얼굴에서도 같은 기준으로 잡힌다.
+ * 넓고 완만한 그늘은 차이가 작아 잡히지 않는다.
+ *
+ * @param lum 결과 크기의 밝기 (0~255)
+ * @param mask 선을 그려도 되는 곳 (살색 면의 안쪽)
+ * @param sigma 선 굵기에 맞춘 값 (픽셀). 얼굴이 클수록 크게 준다.
+ */
+export function featureLines(lum: Float32Array, width: number, height: number, mask: Uint8Array, sigma: number): Float32Array {
+  const ink = new Float32Array(width * height);
+  // 계산은 살색이 있는 범위에서만 한다
+  let x0 = width;
+  let y0 = height;
+  let x1 = -1;
+  let y1 = -1;
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      if (!mask[y * width + x]) continue;
+      if (x < x0) x0 = x;
+      if (x > x1) x1 = x;
+      if (y < y0) y0 = y;
+      if (y > y1) y1 = y;
+    }
+  }
+  if (x1 < 0) return ink;
+  const pad = Math.ceil(sigma * 12);
+  x0 = Math.max(0, x0 - pad);
+  y0 = Math.max(0, y0 - pad);
+  x1 = Math.min(width - 1, x1 + pad);
+  y1 = Math.min(height - 1, y1 + pad);
+  const cw = x1 - x0 + 1;
+  const ch = y1 - y0 + 1;
+  const crop = new Float32Array(cw * ch);
+  for (let y = 0; y < ch; y++) {
+    for (let x = 0; x < cw; x++) crop[y * cw + x] = lum[(y + y0) * width + x + x0];
+  }
+
+  const fine = gaussianBlur(crop, cw, ch, sigma * 0.55);
+  const mid = gaussianBlur(crop, cw, ch, sigma * 2);
+  const wide = gaussianBlur(crop, cw, ch, sigma * 4);
+  const local = new Float32Array(cw * ch);
+  const on = new Uint8Array(cw * ch);
+  for (let i = 0; i < local.length; i++) {
+    if (!mask[(Math.floor(i / cw) + y0) * width + (i % cw) + x0]) continue;
+    const thin = (mid[i] - fine[i]) / (mid[i] + 30);
+    const blob = (wide[i] - mid[i]) / (wide[i] + 30);
+    const strength = Math.max(thin, blob * 0.6);
+    // 흐릿한 가장자리는 잘라 내 또렷한 선으로 만든다
+    const t = Math.min(1, Math.max(0, (strength - 0.038) / 0.04));
+    local[i] = t * t * (3 - 2 * t);
+    if (local[i] > 0.5) on[i] = 1;
+  }
+
+  // 점처럼 흩어진 자잘한 얼룩은 지운다: 선이 되기에는 너무 작은 덩어리
+  const minSize = Math.max(10, Math.round(sigma * sigma * 5));
+  const seen = new Uint8Array(cw * ch);
+  const stack = new Int32Array(cw * ch);
+  for (let start = 0; start < on.length; start++) {
+    if (!on[start] || seen[start]) continue;
+    const members: number[] = [];
+    let top = 0;
+    stack[top++] = start;
+    seen[start] = 1;
+    while (top > 0) {
+      const i = stack[--top];
+      members.push(i);
+      const x = i % cw;
+      // 대각선으로 이어진 것도 한 줄로 본다
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const nx = x + dx;
+          const j = i + dy * cw + dx;
+          if (nx < 0 || nx >= cw || j < 0 || j >= on.length || !on[j] || seen[j]) continue;
+          seen[j] = 1;
+          stack[top++] = j;
+        }
+      }
+    }
+    if (members.length < minSize) for (const i of members) on[i] = 0;
+  }
+  // 남은 선과 그 부드러운 가장자리만 옮긴다
+  for (let y = 0; y < ch; y++) {
+    for (let x = 0; x < cw; x++) {
+      const i = y * cw + x;
+      if (local[i] === 0) continue;
+      let keep = on[i] === 1;
+      for (let dy = -1; dy <= 1 && !keep; dy++) {
+        for (let dx = -1; dx <= 1 && !keep; dx++) {
+          const nx = x + dx;
+          const ny = y + dy;
+          if (nx >= 0 && nx < cw && ny >= 0 && ny < ch && on[ny * cw + nx]) keep = true;
+        }
+      }
+      if (keep) ink[(y + y0) * width + x + x0] = local[i];
+    }
+  }
+  return ink;
 }

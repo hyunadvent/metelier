@@ -15,6 +15,8 @@ interface Photo {
   width: number;
   height: number;
   rgba: Uint8ClampedArray;
+  /** 결과 크기로 맞춘 같은 사진. 얼굴의 선을 정밀하게 뽑는 데 쓴다. */
+  detail: { width: number; height: number; rgba: Uint8ClampedArray };
 }
 
 /** 사진 파일을 읽어 작업 크기로 맞춘 픽셀을 돌려준다. */
@@ -29,8 +31,17 @@ async function readPhoto(file: File, workSize: number): Promise<Photo> {
   ctx.fillRect(0, 0, width, height);
   ctx.imageSmoothingQuality = 'high';
   ctx.drawImage(bitmap, 0, 0, width, height);
+  const rgba = ctx.getImageData(0, 0, width, height).data;
+  // 결과 크기로도 한 벌 만든다
+  const big = fitSize(width, height, DEFAULT_PHOTO_OPTIONS.outputSize);
+  canvas.width = big.width;
+  canvas.height = big.height;
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, big.width, big.height);
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(bitmap, 0, 0, big.width, big.height);
   bitmap.close();
-  return { name: file.name, width, height, rgba: ctx.getImageData(0, 0, width, height).data };
+  return { name: file.name, width, height, rgba, detail: { ...big, rgba: ctx.getImageData(0, 0, big.width, big.height).data } };
 }
 
 function drawPixels(canvas: HTMLCanvasElement | null, width: number, height: number, rgba: Uint8ClampedArray): void {
@@ -113,6 +124,7 @@ export function PhotoLab() {
             // 진행 문구가 화면에 그려질 틈을 준다
             await new Promise((resolve) => setTimeout(resolve, 20));
           },
+          photo.detail,
         );
         if (cancelled) return;
         setPainting(result);
