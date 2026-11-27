@@ -267,3 +267,14 @@
   line-height: 1;
   cursor: pointer;
 }
+
+.photo-dialog__backdrop--clear {
+  align-items: end;
+  background: none;
+  pointer-events: none;
+}
+
+.photo-dialog__backdrop--clear .photo-dialog {
+  max-height: 55%;
+  pointer-events: auto;
+}

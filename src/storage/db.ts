@@ -95,6 +95,10 @@ export async function saveGalleryItem(item: GalleryItem): Promise<void> {
   await run(GALLERY, 'readwrite', (s) => s.put(item));
 }
 
+export function loadGalleryItem(paintingId: string): Promise<GalleryItem | undefined> {
+  return run<GalleryItem | undefined>(GALLERY, 'readonly', (s) => s.get(paintingId));
+}
+
 /** 최근에 완성한 작품부터. */
 export async function listGallery(): Promise<GalleryItem[]> {
   const items = await run<GalleryItem[]>(GALLERY, 'readonly', (s) => s.getAll());

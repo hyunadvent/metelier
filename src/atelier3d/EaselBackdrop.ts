@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import type { OutlineEffect } from 'three/addons/effects/OutlineEffect.js';
 import { loadDecor } from './decor';
-import { buildAtelierRoom, configureRenderer, createOutline, type AtelierRoom } from './room';
+import { buildAtelierRoom, configureRenderer, createOutline, type AtelierRoom, type WallPictureView } from './room';
+import { WallImageCache } from './wallImages';
 
 /** 화면 좌표의 사각형 */
 export interface ScreenRect {
@@ -26,14 +27,30 @@ export class EaselBackdrop {
   private readonly room: AtelierRoom;
   private readonly outline: OutlineEffect;
   private redraw = 0;
+  private readonly wallImages = new WallImageCache();
+  private placed = false;
+  private destroyed = false;
 
   constructor(host: HTMLElement) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
     configureRenderer(this.renderer);
     this.outline = createOutline(this.renderer);
     this.scene.background = new THREE.Color(0xf6e7d4);
-    this.room = buildAtelierRoom(loadDecor());
+    const decor = loadDecor();
+    this.room = buildAtelierRoom(decor);
     this.scene.add(this.room.group);
+    // 그림 벽의 완성작은 작품집에서 읽어 오므로 늦게 걸린다. 걸리면 한 번 더 그린다.
+    void Promise.all(decor.wall.map((p) => this.wallImages.get(p.paintingId))).then((images) => {
+      if (this.destroyed) return;
+      const views: WallPictureView[] = [];
+      decor.wall.forEach((picture, i) => {
+        const image = images[i];
+        if (image) views.push({ picture, image });
+      });
+      if (views.length === 0) return;
+      this.room.setWallPictures(views);
+      if (this.placed) this.outline.render(this.scene, this.camera);
+    });
     const canvas = this.renderer.domElement;
     canvas.style.display = 'block';
     host.appendChild(canvas);
@@ -65,13 +82,16 @@ export class EaselBackdrop {
     camera.translateX(-(paper.x + paper.width / 2 - screenW / 2) * unitsPerPixel);
     camera.translateY((paper.y + paper.height / 2 - screenH / 2) * unitsPerPixel);
     this.outline.render(this.scene, camera);
+    this.placed = true;
     // 액자의 그림처럼 늦게 불러와지는 텍스처가 반영되도록 잠시 뒤 한 번 더 그린다.
     window.clearTimeout(this.redraw);
     this.redraw = window.setTimeout(() => this.outline.render(this.scene, camera), 600);
   }
 
   destroy(): void {
+    this.destroyed = true;
     window.clearTimeout(this.redraw);
+    this.wallImages.dispose();
     this.room.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();

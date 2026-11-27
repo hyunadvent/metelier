@@ -100,3 +100,60 @@
   line-height: 1;
   cursor: pointer;
 }
+
+/* ── 꾸미기: 그림 벽 ──────────────────────────── */
+
+.atelier3d__wallbar {
+  position: absolute;
+  left: 50%;
+  bottom: 22px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: calc(100% - 32px);
+  padding: 10px 12px 10px 18px;
+  box-sizing: border-box;
+  border-radius: 999px;
+  border: 3px solid #ecd9c2;
+  background: #fffaf2;
+  box-shadow: 0 8px 22px rgb(91 70 54 / 25%);
+  color: #5b4636;
+}
+
+.atelier3d__wallbar-text {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.atelier3d__wallbar-button {
+  flex: none;
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 2px solid #ecd9c2;
+  background: #fff;
+  color: inherit;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.atelier3d__wallbar-button--primary {
+  border-color: #e0913a;
+  background: #f4a24c;
+  color: #fff;
+}
+
+@media (max-width: 520px) {
+  .atelier3d__wallbar {
+    flex-wrap: wrap;
+    justify-content: center;
+    border-radius: 20px;
+  }
+
+  .atelier3d__wallbar-text {
+    width: 100%;
+    text-align: center;
+  }
+}

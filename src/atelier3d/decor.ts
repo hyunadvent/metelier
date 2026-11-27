@@ -27,10 +27,96 @@ export const PLANT_INFO: Record<PlantKind, { icon: string; label: string }> = {
   cactus: { icon: '🌵', label: '선인장' },
 };
 
+/** 액자의 종류. 지금은 나무 액자 하나이고, 나중에 고를 수 있는 액자가 늘어난다. */
+export const FRAME_KINDS = ['wood'] as const;
+export type FrameKind = (typeof FRAME_KINDS)[number];
+
+export const FRAME_INFO: Record<FrameKind, { label: string }> = {
+  wood: { label: '나무 액자' },
+};
+
+/**
+ * 이젤 왼쪽 벽(그림 벽)에 건 완성작.
+ * 위치는 벽 위의 좌표다: z 는 방의 깊이 방향(창문 쪽이 -), y 는 바닥에서의 높이. 둘 다 그림 가운데의 자리.
+ */
+export interface WallPicture {
+  /** 벽에 건 그림마다 붙는 이름표 */
+  id: string;
+  /** 완성작(작품집)의 그림 */
+  paintingId: string;
+  frame: FrameKind;
+  z: number;
+  y: number;
+}
+
+/** 그림 벽에서 액자를 걸 수 있는 범위 (액자의 바깥 테두리 기준). 아래쪽은 바닥 소품 위, 위쪽은 천장 아래. */
+export const GALLERY_WALL = { minZ: -2.1, maxZ: 7.1, minY: 1.15, maxY: 3.1 } as const;
+/** 벽에 건 그림의 긴 변 (액자 테두리 빼고) */
+export const WALL_PICTURE_SIZE = 0.62;
+/** 액자 테두리가 그림 둘레에 더하는 폭 (양쪽 합) */
+export const FRAME_BORDER = 0.13;
+export const MAX_WALL_PICTURES = 16;
+
+/** 그림의 가로세로 비율에 맞춘 그림 크기 (액자 테두리 빼고) */
+export function wallPictureSize(aspect: number): { w: number; h: number } {
+  const a = Number.isFinite(aspect) && aspect > 0 ? Math.min(4, Math.max(0.25, aspect)) : 1;
+  return a >= 1 ? { w: WALL_PICTURE_SIZE, h: WALL_PICTURE_SIZE / a } : { w: WALL_PICTURE_SIZE * a, h: WALL_PICTURE_SIZE };
+}
+
+/** 액자가 그림 벽 밖으로 나가지 않도록 그림 가운데의 자리를 고친다. */
+export function clampOnWall(z: number, y: number, w: number, h: number): { z: number; y: number } {
+  const hw = (w + FRAME_BORDER) / 2;
+  const hh = (h + FRAME_BORDER) / 2;
+  const clamp = (v: number, lo: number, hi: number) => (lo > hi ? (lo + hi) / 2 : Math.min(hi, Math.max(lo, v)));
+  return {
+    z: clamp(z, GALLERY_WALL.minZ + hw, GALLERY_WALL.maxZ - hw),
+    y: clamp(y, GALLERY_WALL.minY + hh, GALLERY_WALL.maxY - hh),
+  };
+}
+
+/** 벽 위의 사각형 (가운데와 그림 크기) */
+export interface WallRect {
+  z: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/**
+ * 새 그림을 걸 빈자리를 찾는다. 다른 액자와 겹치지 않는 자리 가운데 prefer 에 가장 가까운 곳.
+ * 빈자리가 없으면 prefer 를 벽 안으로 고친 자리를 돌려준다.
+ */
+export function findFreeSpot(existing: WallRect[], w: number, h: number, prefer: { z: number; y: number }): { z: number; y: number } {
+  const gap = 0.1;
+  const overlaps = (z: number, y: number) =>
+    existing.some(
+      (r) => Math.abs(r.z - z) < (r.w + w) / 2 + FRAME_BORDER + gap && Math.abs(r.y - y) < (r.h + h) / 2 + FRAME_BORDER + gap,
+    );
+  const start = clampOnWall(prefer.z, prefer.y, w, h);
+  if (!overlaps(start.z, start.y)) return start;
+  let best: { z: number; y: number } | null = null;
+  let bestDistance = Infinity;
+  const step = 0.05;
+  for (let z = GALLERY_WALL.minZ; z <= GALLERY_WALL.maxZ; z += step) {
+    for (let y = GALLERY_WALL.minY; y <= GALLERY_WALL.maxY; y += step) {
+      const p = clampOnWall(z, y, w, h);
+      if (Math.abs(p.z - z) > 1e-9 || Math.abs(p.y - y) > 1e-9) continue;
+      const d = Math.hypot(p.z - start.z, (p.y - start.y) * 1.5);
+      if (d < bestDistance && !overlaps(p.z, p.y)) {
+        best = p;
+        bestDistance = d;
+      }
+    }
+  }
+  return best ?? start;
+}
+
 export interface AtelierDecor {
   version: 1;
   pictures: Record<PictureSlot, PictureRef>;
   plants: Record<PlantSlot, PlantKind>;
+  /** 그림 벽에 건 완성작들 */
+  wall: WallPicture[];
 }
 
 export const DEFAULT_DECOR: AtelierDecor = {
@@ -44,9 +130,32 @@ export const DEFAULT_DECOR: AtelierDecor = {
     'door-far': { kind: 'builtin', id: 'lilac-flowers' },
   },
   plants: { 'window-stand': 'leafy' },
+  wall: [],
 };
 
 const PAINTING_ID = /^[a-z0-9][a-z0-9-]{0,40}$/;
+const WALL_ID = /^[a-z0-9][a-z0-9-]{0,40}$/;
+
+function parseWall(raw: unknown): WallPicture[] {
+  if (!Array.isArray(raw)) return [];
+  const wall: WallPicture[] = [];
+  const seen = new Set<string>();
+  for (const item of raw) {
+    if (wall.length >= MAX_WALL_PICTURES) break;
+    if (typeof item !== 'object' || item === null) continue;
+    const v = item as Record<string, unknown>;
+    if (typeof v.id !== 'string' || !WALL_ID.test(v.id) || seen.has(v.id)) continue;
+    if (typeof v.paintingId !== 'string' || !PAINTING_ID.test(v.paintingId)) continue;
+    if (typeof v.z !== 'number' || typeof v.y !== 'number' || !Number.isFinite(v.z) || !Number.isFinite(v.y)) continue;
+    const frame = (FRAME_KINDS as readonly unknown[]).includes(v.frame) ? (v.frame as FrameKind) : 'wood';
+    // 그림의 비율을 여기서는 모르므로, 가장 작은 그림이어도 벽 안에 들도록만 고친다
+    const z = Math.min(GALLERY_WALL.maxZ, Math.max(GALLERY_WALL.minZ, v.z));
+    const y = Math.min(GALLERY_WALL.maxY, Math.max(GALLERY_WALL.minY, v.y));
+    seen.add(v.id);
+    wall.push({ id: v.id, paintingId: v.paintingId, frame, z, y });
+  }
+  return wall;
+}
 const STORAGE_KEY = 'metelier.decor';
 
 function parsePicture(raw: unknown): PictureRef | null {
@@ -63,7 +172,7 @@ function parsePicture(raw: unknown): PictureRef | null {
 
 /** 저장된 값을 믿을 수 있는 꾸밈 데이터로 고친다. 빠졌거나 잘못된 자리는 기본값으로 채운다. */
 export function normalizeDecor(raw: unknown): AtelierDecor {
-  const source = typeof raw === 'object' && raw !== null ? (raw as { pictures?: unknown; plants?: unknown }) : {};
+  const source = typeof raw === 'object' && raw !== null ? (raw as { pictures?: unknown; plants?: unknown; wall?: unknown }) : {};
   const saved = source.pictures ?? {};
   const pictures = { ...DEFAULT_DECOR.pictures };
   const plants = { ...DEFAULT_DECOR.plants };
@@ -79,7 +188,7 @@ export function normalizeDecor(raw: unknown): AtelierDecor {
       if (picture) pictures[slot] = picture;
     }
   }
-  return { version: 1, pictures, plants };
+  return { version: 1, pictures, plants, wall: parseWall(source.wall) };
 }
 
 export function loadDecor(): AtelierDecor {

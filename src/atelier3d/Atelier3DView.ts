@@ -1,7 +1,16 @@
 import * as THREE from 'three';
 import type { OutlineEffect } from 'three/addons/effects/OutlineEffect.js';
 import { Character3D, type Pose3D } from './Character3D';
-import { loadDecor, type PlantKind, type PlantSlot } from './decor';
+import {
+  findFreeSpot,
+  loadDecor,
+  MAX_WALL_PICTURES,
+  wallPictureSize,
+  type PlantKind,
+  type PlantSlot,
+  type WallPicture,
+} from './decor';
+import { WallImageCache } from './wallImages';
 import {
   approachCamera,
   clampDestination,
@@ -14,7 +23,16 @@ import {
   type Ground,
   type Jump,
 } from './movement';
-import { buildAtelierRoom, configureRenderer, createOutline, type Activity, type AtelierRoom, type Hotspot3D, type Hotspot3DId } from './room';
+import {
+  buildAtelierRoom,
+  configureRenderer,
+  createOutline,
+  type Activity,
+  type AtelierRoom,
+  type Hotspot3D,
+  type Hotspot3DId,
+  type WallPictureView,
+} from './room';
 
 /** 걷는 속도 (미터 / 초) */
 const WALK_SPEED = 2.6;
@@ -46,6 +64,15 @@ const CAMERA = {
   /** 활동 시점으로 옮겨 가거나 돌아올 때의 빠르기. 클수록 빠르다. */
   glideSpeed: 3.15,
 };
+/** 그림 벽을 바라보는 시점: 캐릭터 뒤(방 안쪽)에서 왼쪽 벽을 정면으로 본다 */
+const WALL_CAMERA: CameraPose = { azimuth: Math.PI / 2, polar: 1.42, distance: 4.4 };
+/** 그림 벽을 볼 때 캐릭터가 서는 곳의 벽에서 떨어진 거리 */
+const WALL_STAND = 1.7;
+
+/** 다른 꾸밈 자리와 겹치지 않는 벽 그림 이름표 */
+function newWallId(): string {
+  return 'w' + Date.now().toString(36) + Math.floor(Math.random() * 1296).toString(36);
+}
 
 export interface Atelier3DEvents {
   /** 자리를 잡고 하는 활동이 바뀌었을 때. 일어나면 null. */
@@ -54,6 +81,12 @@ export interface Atelier3DEvents {
   onEasel(): void;
   /** 걸이대의 카메라를 눌렀을 때 */
   onCamera(): void;
+  /** 그림 벽의 표시를 눌렀을 때 */
+  onGalleryWall(): void;
+  /** 벽에 건 그림을 고르거나(눌렀거나 옮겼을 때) 고른 것을 풀었을 때 */
+  onWallPictureSelect(id: string | null): void;
+  /** 벽 그림이 바뀌었을 때 (걸기, 옮기기, 치우기). 저장은 받는 쪽이 한다. */
+  onWallChange(wall: WallPicture[]): void;
   /** 바꿀 수 있는 화분을 눌렀을 때 */
   onPlantSpot(slot: PlantSlot): void;
   /** 아직 준비 중인 활동을 눌렀을 때 */
@@ -97,6 +130,14 @@ export class Atelier3DView {
   private polar = 1.2;
   private distance = CAMERA.startDistance;
   private drag: { id: number; x: number; y: number; moved: boolean } | null = null;
+  /** 벽 그림을 끌고 있는 중. offset 은 누른 곳과 그림 가운데의 차이 */
+  private pictureDrag: { pointer: number; id: string; x: number; y: number; moved: boolean; offset: { z: number; y: number } } | null = null;
+  private wall: WallPicture[];
+  private readonly wallImages = new WallImageCache();
+  private readonly raycaster = new THREE.Raycaster();
+  private destroyed = false;
+  /** 옮기는 중인 벽 그림. 이때는 그림 벽 표시를 숨긴다 (그림 위를 가리지 않게) */
+  private wallSelection: string | null = null;
   private frame = 0;
   private lastTime = performance.now();
   private time = 0;
@@ -111,7 +152,10 @@ export class Atelier3DView {
     this.outline = createOutline(this.renderer);
     this.scene.background = new THREE.Color(0xf6e7d4);
 
-    this.room = buildAtelierRoom(loadDecor());
+    const decor = loadDecor();
+    this.room = buildAtelierRoom(decor);
+    this.wall = decor.wall;
+    void this.rebuildWall();
     this.scene.add(this.room.group, this.character.group);
 
     const canvas = this.renderer.domElement;
@@ -164,7 +208,100 @@ export class Atelier3DView {
     this.room.setPlant(slot, kind);
   }
 
+  // ── 그림 벽 ────────────────────────────────────
+
+  /** 벽 그림들의 그림을 불러와 다시 건다. 작품집에서 지워진 그림은 걸지 않는다. */
+  private async rebuildWall(): Promise<void> {
+    const wall = this.wall;
+    const images = await Promise.all(wall.map((p) => this.wallImages.get(p.paintingId)));
+    if (this.destroyed || wall !== this.wall) return;
+    const views: WallPictureView[] = [];
+    wall.forEach((picture, i) => {
+      const image = images[i];
+      if (image) views.push({ picture, image });
+    });
+    this.room.setWallPictures(views);
+  }
+
+  /** 그림 벽 쪽으로 걸어가서 벽을 바라본다. */
+  focusGalleryWall(): void {
+    const spot = this.room.hotspots.find((h) => h.id === 'gallery-wall')!;
+    const z = Math.min(this.room.bounds.maxZ - 0.5, Math.max(-0.6, this.activity ? spot.position.z : this.position.z));
+    this.walkTo(clampDestination({ x: this.room.galleryWallX + WALL_STAND, z }, this.room), () => {
+      this.heading = -Math.PI / 2;
+    });
+    this.cameraGoal = WALL_CAMERA;
+  }
+
+  /** 이 완성작이 벽에 걸려 있으면 그 이름표 */
+  wallPictureOf(paintingId: string): string | null {
+    return this.wall.find((p) => p.paintingId === paintingId)?.id ?? null;
+  }
+
+  get wallCount(): number {
+    return this.wall.length;
+  }
+
+  /**
+   * 완성작을 벽에 건다. 화면 가운데가 가리키는 벽 자리 가까이의 빈자리에 건다.
+   * @returns 건 그림의 이름표. 그림을 불러오지 못했거나 벽이 가득 차면 null
+   */
+  async addWallPicture(paintingId: string): Promise<string | null> {
+    const existing = this.wallPictureOf(paintingId);
+    if (existing) return existing;
+    if (this.wall.length >= MAX_WALL_PICTURES) return null;
+    const image = await this.wallImages.get(paintingId);
+    if (!image || this.destroyed) return null;
+    const { w, h } = wallPictureSize(image.aspect);
+    const rects = this.wall.map((p) => this.room.wallPictureRect(p.id)).filter((r) => r !== null);
+    // 눈높이에 건다. 좌우 자리는 화면 가운데가 가리키는 곳
+    const aim = { z: this.wallPointAt(0, 0)?.z ?? this.position.z, y: 1.95 };
+    const spot = findFreeSpot(rects, w, h, aim);
+    const picture: WallPicture = { id: newWallId(), paintingId, frame: 'wood', z: spot.z, y: spot.y };
+    this.wall = [...this.wall, picture];
+    await this.rebuildWall();
+    this.events.onWallChange(this.wall);
+    return picture.id;
+  }
+
+  removeWallPicture(id: string): void {
+    this.wall = this.wall.filter((p) => p.id !== id);
+    if (this.wallSelection === id) this.selectWallPicture(null);
+    void this.rebuildWall();
+    this.events.onWallChange(this.wall);
+  }
+
+  /** 고른 그림을 살짝 앞으로 내밀어 보여 준다. null 이면 풀기. */
+  selectWallPicture(id: string | null): void {
+    this.wallSelection = id;
+    this.room.highlightWallPicture(id);
+  }
+
+  /** 화면 위의 점(-1~1 정규 좌표)이 가리키는 그림 벽 위의 자리. 벽 쪽을 보고 있지 않으면 null. */
+  private wallPointAt(ndcX: number, ndcY: number): { z: number; y: number } | null {
+    this.raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), this.camera);
+    const { origin, direction } = this.raycaster.ray;
+    if (direction.x > -1e-4) return null;
+    const t = (this.room.galleryWallX + 0.03 - origin.x) / direction.x;
+    if (t <= 0) return null;
+    return { z: origin.z + direction.z * t, y: origin.y + direction.y * t };
+  }
+
+  private toNdc(clientX: number, clientY: number): { x: number; y: number } {
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    return { x: ((clientX - rect.left) / rect.width) * 2 - 1, y: -((clientY - rect.top) / rect.height) * 2 + 1 };
+  }
+
+  /** 화면의 한 점 아래에 있는 벽 그림 */
+  private wallPictureUnder(clientX: number, clientY: number): string | null {
+    const ndc = this.toNdc(clientX, clientY);
+    this.raycaster.setFromCamera(new THREE.Vector2(ndc.x, ndc.y), this.camera);
+    return this.room.wallPictureAt(this.raycaster);
+  }
+
   destroy(): void {
+    this.destroyed = true;
+    this.wallImages.dispose();
     cancelAnimationFrame(this.frame);
     this.resizeObserver.disconnect();
     const canvas = this.renderer.domElement;
@@ -249,6 +386,10 @@ export class Atelier3DView {
       case 'camera':
         this.events.onCamera();
         break;
+      case 'gallery-wall':
+        this.focusGalleryWall();
+        this.events.onGalleryWall();
+        break;
       case 'bookshelf':
         if (this.activity === 'read') break;
         // 책장 앞에서 책을 고른 뒤 방석으로 가서 읽는다.
@@ -301,7 +442,20 @@ export class Atelier3DView {
   // ── 입력 ───────────────────────────────────────
 
   private onPointerDown = (e: PointerEvent): void => {
-    if (this.drag || (e.pointerType === 'mouse' && e.button !== 0)) return;
+    if (this.drag || this.pictureDrag || (e.pointerType === 'mouse' && e.button !== 0)) return;
+    // 벽 그림을 누르면 둘러보기 대신 그림을 끈다
+    const picture = this.wallPictureUnder(e.clientX, e.clientY);
+    const rect = picture ? this.room.wallPictureRect(picture) : null;
+    const point = rect ? this.wallPointAt(this.toNdc(e.clientX, e.clientY).x, this.toNdc(e.clientX, e.clientY).y) : null;
+    if (picture && rect && point) {
+      this.pictureDrag = { pointer: e.pointerId, id: picture, x: e.clientX, y: e.clientY, moved: false, offset: { z: point.z - rect.z, y: point.y - rect.y } };
+      try {
+        this.renderer.domElement.setPointerCapture(e.pointerId);
+      } catch {
+        // 캡처가 안 되는 포인터여도 계속한다.
+      }
+      return;
+    }
     this.drag = { id: e.pointerId, x: e.clientX, y: e.clientY, moved: false };
     try {
       this.renderer.domElement.setPointerCapture(e.pointerId);
@@ -311,6 +465,19 @@ export class Atelier3DView {
   };
 
   private onPointerMove = (e: PointerEvent): void => {
+    const p = this.pictureDrag;
+    if (p && e.pointerId === p.pointer) {
+      if (!p.moved && Math.hypot(e.clientX - p.x, e.clientY - p.y) < DRAG_THRESHOLD) return;
+      if (!p.moved) {
+        p.moved = true;
+        this.selectWallPicture(p.id);
+        this.events.onWallPictureSelect(p.id);
+      }
+      const ndc = this.toNdc(e.clientX, e.clientY);
+      const point = this.wallPointAt(ndc.x, ndc.y);
+      if (point) this.room.moveWallPicture(p.id, point.z - p.offset.z, point.y - p.offset.y);
+      return;
+    }
     const d = this.drag;
     if (!d || e.pointerId !== d.id) return;
     const dx = e.clientX - d.x;
@@ -326,6 +493,21 @@ export class Atelier3DView {
   };
 
   private onPointerUp = (e: PointerEvent): void => {
+    const p = this.pictureDrag;
+    if (p && e.pointerId === p.pointer) {
+      this.pictureDrag = null;
+      if (p.moved) {
+        const rect = this.room.wallPictureRect(p.id);
+        if (rect) {
+          this.wall = this.wall.map((w) => (w.id === p.id ? { ...w, z: rect.z, y: rect.y } : w));
+          this.events.onWallChange(this.wall);
+        }
+      } else {
+        this.selectWallPicture(p.id);
+        this.events.onWallPictureSelect(p.id);
+      }
+      return;
+    }
     const d = this.drag;
     if (!d || e.pointerId !== d.id) return;
     this.drag = null;
@@ -341,6 +523,16 @@ export class Atelier3DView {
 
   private onPointerCancel = (): void => {
     this.drag = null;
+    if (this.pictureDrag?.moved) {
+      // 끌던 그림은 마지막 자리에 둔다
+      const id = this.pictureDrag.id;
+      const rect = this.room.wallPictureRect(id);
+      if (rect) {
+        this.wall = this.wall.map((w) => (w.id === id ? { ...w, z: rect.z, y: rect.y } : w));
+        this.events.onWallChange(this.wall);
+      }
+    }
+    this.pictureDrag = null;
   };
 
   private onWheel = (e: WheelEvent): void => {
@@ -501,7 +693,10 @@ export class Atelier3DView {
     for (const { hotspot, el } of this.spots) {
       const p = hotspot.position.clone().project(this.camera);
       // 지금 앉아 있는 자리의 표시는 숨긴다.
-      const hidden = p.z > 1 || (this.activity !== null && hotspot.id === ACTIVITY_SPOT[this.activity]);
+      const hidden =
+        p.z > 1 ||
+        (this.activity !== null && hotspot.id === ACTIVITY_SPOT[this.activity]) ||
+        (hotspot.id === 'gallery-wall' && this.wallSelection !== null);
       el.style.display = hidden ? 'none' : '';
       if (hidden) continue;
       // 앉아 있으면 이젤이, 서 있으면 의자가 눈에 띄게 움직인다.

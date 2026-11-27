@@ -1,6 +1,19 @@
 import * as THREE from 'three';
 import { OutlineEffect } from 'three/addons/effects/OutlineEffect.js';
-import { DEFAULT_DECOR, type AtelierDecor, type PictureRef, type PictureSlot, type PlantKind, type PlantSlot } from './decor';
+import {
+  clampOnWall,
+  DEFAULT_DECOR,
+  FRAME_BORDER,
+  wallPictureSize,
+  type AtelierDecor,
+  type FrameKind,
+  type PictureRef,
+  type PictureSlot,
+  type PlantKind,
+  type PlantSlot,
+  type WallPicture,
+} from './decor';
+import type { WallImage } from './wallImages';
 import type { Box3D, Ground, WalkArea } from './movement';
 import { curtainGeometry, lathe, roundedBox, smoothProfile } from './shapes';
 import {
@@ -18,7 +31,13 @@ import {
   woodFloorTexture,
 } from './textures';
 
-export type Hotspot3DId = 'easel' | 'stool' | 'window' | 'bookshelf' | 'plant' | 'camera';
+export type Hotspot3DId = 'easel' | 'stool' | 'window' | 'bookshelf' | 'plant' | 'camera' | 'gallery-wall';
+
+/** 그림 벽에 걸 그림 한 점: 자리와 액자, 그리고 불러온 그림 */
+export interface WallPictureView {
+  picture: WallPicture;
+  image: WallImage;
+}
 
 /** 캐릭터가 자리를 잡고 하는 활동: 그림 그리기, 차 마시기, 책 읽기 */
 export type Activity = 'paint' | 'tea' | 'read';
@@ -66,6 +85,18 @@ export interface AtelierRoom extends WalkArea {
   hotspots: Hotspot3D[];
   /** 그 자리의 화분을 다른 화분으로 바꾼다 (꾸미기). */
   setPlant(slot: PlantSlot, kind: PlantKind): void;
+  /** 그림 벽(이젤 왼쪽 벽)의 안쪽 면의 x */
+  galleryWallX: number;
+  /** 그림 벽에 건 그림들을 새로 건다. 그림의 텍스처는 부르는 쪽이 갖고 있다가 정리한다. */
+  setWallPictures(items: WallPictureView[]): void;
+  /** 벽에 건 그림을 옮긴다. 벽 밖으로 나가지 않게 고친 자리를 돌려준다. */
+  moveWallPicture(id: string, z: number, y: number): { z: number; y: number } | null;
+  /** 벽에 건 그림의 크기 (액자 테두리 빼고) */
+  wallPictureRect(id: string): { z: number; y: number; w: number; h: number } | null;
+  /** 광선이 맞히는 벽 그림. 없으면 null. */
+  wallPictureAt(raycaster: THREE.Raycaster): string | null;
+  /** 고른 그림을 살짝 앞으로 내밀어 표시한다. */
+  highlightWallPicture(id: string | null): void;
   /** 움직이는 것(창밖 꽃잎, 등불의 흔들림)을 한 프레임만큼 진행한다. */
   update(dt: number): void;
   dispose(): void;
@@ -925,6 +956,67 @@ export function buildAtelierRoom(decor: AtelierDecor = DEFAULT_DECOR): AtelierRo
   hang('door-near', DOOR_X - 1.5, 1.7, front, 0.8, 0.6, -1);
   hang('door-far', DOOR_X - 2.9, 1.7, front, 0.5, 0.66, -1);
 
+  // ── 그림 벽 (이젤 왼쪽 벽): 완성한 그림을 액자에 넣어 건다 ──
+  const wallGroup = new THREE.Group();
+  group.add(wallGroup);
+  /** 벽 그림마다 만든 것들. 그림을 다시 걸 때 정리한다. */
+  const wallItems = new Map<string, { group: THREE.Group; w: number; h: number; trash: { dispose(): void }[] }>();
+  const frameMaterials = new Map<FrameKind, THREE.Material>();
+  const frameMaterial = (kind: FrameKind): THREE.Material => {
+    let m = frameMaterials.get(kind);
+    if (!m) {
+      switch (kind) {
+        case 'wood':
+          m = keep(new THREE.MeshStandardMaterial({ color: WOOD, roughness: 0.75 }));
+          break;
+      }
+      frameMaterials.set(kind, m);
+    }
+    return m;
+  };
+  const matMaterial = mat(0xfffaf2);
+  const clearWall = () => {
+    for (const item of wallItems.values()) {
+      wallGroup.remove(item.group);
+      item.trash.forEach((t) => t.dispose());
+    }
+    wallItems.clear();
+  };
+  /** 액자 하나. 그림 앞면이 방 안쪽(+x)을 바라보도록 세운다. */
+  const buildWallPicture = ({ picture, image }: WallPictureView) => {
+    const { w, h } = wallPictureSize(image.aspect);
+    const g = new THREE.Group();
+    g.rotation.y = Math.PI / 2;
+    g.userData.wallId = picture.id;
+    const trash: { dispose(): void }[] = [];
+    const part = (geometry: THREE.BufferGeometry, material: THREE.Material, z: number, shadow = true) => {
+      trash.push(geometry);
+      const m = new THREE.Mesh(geometry, material);
+      m.position.z = z;
+      m.castShadow = shadow;
+      m.receiveShadow = true;
+      g.add(m);
+      return m;
+    };
+    // 액자 테두리, 그 안의 흰 여백, 그림
+    part(roundedBox(w + FRAME_BORDER, h + FRAME_BORDER, 0.05, 0.02), frameMaterial(picture.frame), 0.025);
+    part(roundedBox(w + 0.04, h + 0.04, 0.052, 0.004), matMaterial, 0.027);
+    const canvasMat = new THREE.MeshStandardMaterial({ color: 0xffffff, map: image.texture, roughness: 1 });
+    trash.push(canvasMat);
+    part(new THREE.PlaneGeometry(w, h), canvasMat, 0.0545, false);
+    // 벽에 닿는 그림자
+    const shadowPlane = new THREE.Mesh(new THREE.PlaneGeometry(w + FRAME_BORDER + 0.1, h + FRAME_BORDER + 0.1), shadeMat);
+    trash.push(shadowPlane.geometry);
+    shadowPlane.position.set(0, -0.03, 0.003);
+    shadowPlane.renderOrder = 1;
+    g.add(shadowPlane);
+    const p = clampOnWall(picture.z, picture.y, w, h);
+    g.position.set(-halfW, p.y, p.z);
+    wallGroup.add(g);
+    wallItems.set(picture.id, { group: g, w, h, trash });
+  };
+  let highlighted: string | null = null;
+
   // ── 조명 ───────────────────────────────────────
   group.add(new THREE.HemisphereLight(0xfff6e8, 0xe9c9a4, 1.25));
   group.add(new THREE.AmbientLight(0xfff3e4, 0.55));
@@ -1011,10 +1103,40 @@ export function buildAtelierRoom(decor: AtelierDecor = DEFAULT_DECOR): AtelierRo
       { id: 'window', label: '창가에서 차 마시기', icon: '☕', position: new THREE.Vector3(2.15, 0.95, back + 0.72), available: true },
       { id: 'plant', label: '화분 바꾸기', icon: '🌱', position: new THREE.Vector3(0.5, 1.9, back + 0.42), available: true },
       { id: 'bookshelf', label: '책 읽기', icon: '📖', position: new THREE.Vector3(halfW - 0.55, 1.75, -1.65), available: true },
+      { id: 'gallery-wall', label: '완성한 그림 걸기', icon: '🖼️', position: new THREE.Vector3(-halfW + 0.2, 2.55, 2.7), available: true },
       { id: 'camera', label: '사진으로 색칠 그림 만들기', icon: '📷', position: new THREE.Vector3(DOOR_X + 1.25 + 0.24, 2.08, front - 0.14), available: true },
     ],
     setPlant(slot: PlantSlot, kind: PlantKind) {
       if (slot === 'window-stand') growPlant(kind);
+    },
+    galleryWallX: -halfW,
+    setWallPictures(items: WallPictureView[]) {
+      clearWall();
+      items.forEach(buildWallPicture);
+      if (highlighted && !wallItems.has(highlighted)) highlighted = null;
+      if (highlighted) wallItems.get(highlighted)!.group.position.x = -halfW + 0.04;
+    },
+    moveWallPicture(id: string, z: number, y: number) {
+      const item = wallItems.get(id);
+      if (!item) return null;
+      const p = clampOnWall(z, y, item.w, item.h);
+      item.group.position.z = p.z;
+      item.group.position.y = p.y;
+      return p;
+    },
+    wallPictureRect(id: string) {
+      const item = wallItems.get(id);
+      return item ? { z: item.group.position.z, y: item.group.position.y, w: item.w, h: item.h } : null;
+    },
+    wallPictureAt(raycaster: THREE.Raycaster) {
+      const hit = raycaster.intersectObject(wallGroup, true)[0];
+      let object: THREE.Object3D | null = hit?.object ?? null;
+      while (object && object.userData.wallId === undefined) object = object.parent;
+      return object ? (object.userData.wallId as string) : null;
+    },
+    highlightWallPicture(id: string | null) {
+      for (const [key, item] of wallItems) item.group.position.x = key === id ? -halfW + 0.04 : -halfW;
+      highlighted = id;
     },
     update(dt: number) {
       time += dt;
@@ -1034,6 +1156,7 @@ export function buildAtelierRoom(decor: AtelierDecor = DEFAULT_DECOR): AtelierRo
       glowSprite.material.opacity = 0.85 * flicker;
     },
     dispose() {
+      clearWall();
       disposables.forEach((d) => d.dispose());
     },
   };

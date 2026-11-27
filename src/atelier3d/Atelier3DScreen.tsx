@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Atelier3DView } from './Atelier3DView';
-import { loadDecor, PLANT_INFO, PLANT_KINDS, saveDecor, type PlantKind, type PlantSlot } from './decor';
+import { FRAME_INFO, loadDecor, MAX_WALL_PICTURES, PLANT_INFO, PLANT_KINDS, saveDecor, type PlantKind, type PlantSlot } from './decor';
+import { WallPicker } from './WallPicker';
 import type { Activity } from './room';
 import { PaintingPicker } from '../photo/PaintingPicker';
 import { PhotoDialog } from '../photo/PhotoDialog';
@@ -41,6 +42,10 @@ export function Atelier3DScreen({ startSeated, onStartColoring }: Atelier3DScree
   const [photoOpen, setPhotoOpen] = useState(false);
   /** 이젤에서 그림을 고르는 중이면 사진으로 만든 그림의 목록 */
   const [choices, setChoices] = useState<StoredPaintingSummary[] | null>(null);
+  /** 그림 벽에 걸 그림을 고르는 창이 열려 있는지 */
+  const [wallPickerOpen, setWallPickerOpen] = useState(false);
+  /** 그림 벽에서 고른 그림 (옮기거나 치우는 중) */
+  const [wallSelected, setWallSelected] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -64,6 +69,14 @@ export function Atelier3DScreen({ startSeated, onStartColoring }: Atelier3DScree
               .then((photos) => (photos.length > 0 ? setChoices(photos) : startRef.current()));
           },
           onCamera: () => setPhotoOpen(true),
+          onGalleryWall: () => setWallPickerOpen(true),
+          onWallPictureSelect: setWallSelected,
+          onWallChange: (wall) =>
+            setDecor((previous) => {
+              const next = { ...previous, wall };
+              saveDecor(next);
+              return next;
+            }),
           onPlantSpot: setPlantSlot,
           onUnavailable: (hotspot) => setToast(`"${hotspot.label}"는 곧 만나요`),
         },
@@ -89,6 +102,31 @@ export function Atelier3DScreen({ startSeated, onStartColoring }: Atelier3DScree
     setPlantSlot(null);
   };
 
+  /** 고른 완성작을 벽에 건다. 이미 걸려 있으면 그 그림을 고른다. */
+  const hangPicture = async (paintingId: string) => {
+    setWallPickerOpen(false);
+    const view = viewRef.current;
+    if (!view) return;
+    const id = await view.addWallPicture(paintingId);
+    if (!id) {
+      setToast('그림을 걸지 못했어요');
+      return;
+    }
+    view.selectWallPicture(id);
+    setWallSelected(id);
+  };
+
+  const finishWall = () => {
+    viewRef.current?.selectWallPicture(null);
+    setWallSelected(null);
+  };
+
+  const removeWallPicture = () => {
+    if (!wallSelected) return;
+    viewRef.current?.removeWallPicture(wallSelected);
+    setWallSelected(null);
+  };
+
   useEffect(() => {
     if (!toast) return;
     const timer = window.setTimeout(() => setToast(null), toast.length > 24 ? 3200 : 1800);
@@ -102,10 +140,29 @@ export function Atelier3DScreen({ startSeated, onStartColoring }: Atelier3DScree
         <div className="atelier__pill">Metelier</div>
       </header>
       {error && <p className="atelier__message">{error}</p>}
-      {!error && (
+      {!error && !wallSelected && (
         <p className="atelier__hint">
           {HINTS[activity ?? 'none']}
         </p>
+      )}
+      {wallSelected && (
+        <div className="atelier3d__wallbar" role="toolbar" aria-label="벽 그림 옮기기" data-testid="wall-bar">
+          <span className="atelier3d__wallbar-text">그림을 끌어서 옮겨요 · {FRAME_INFO.wood.label}</span>
+          <button className="atelier3d__wallbar-button" data-testid="wall-remove" onClick={removeWallPicture}>
+            치우기
+          </button>
+          <button className="atelier3d__wallbar-button atelier3d__wallbar-button--primary" data-testid="wall-done" onClick={finishWall}>
+            다 했어요
+          </button>
+        </div>
+      )}
+      {wallPickerOpen && (
+        <WallPicker
+          hung={new Set(decor.wall.map((p) => p.paintingId))}
+          full={decor.wall.length >= MAX_WALL_PICTURES}
+          onPick={(id) => void hangPicture(id)}
+          onClose={() => setWallPickerOpen(false)}
+        />
       )}
       {plantSlot && (
         <div className="atelier3d__picker" role="dialog" aria-label="화분 고르기">
