@@ -3,7 +3,18 @@
 import type { PaletteEntry } from '../coloring/painting';
 import { describeRegions, type RegionInfo, type Segmentation } from '../editor/segment';
 import { closeHoles, dilate, erode, featureLines, fillHolesWithSkin, flattenSkin, luminance, skinMask, upscaleMap } from './faceLines';
-import { absorb, bilateral, components, edgeStrength, mergeWeakBorders, modeFilter, quantize, toLab, upscaleLabels } from './imageOps';
+import {
+  absorb,
+  bilateral,
+  components,
+  contourEdges,
+  edgeStrength,
+  mergeWeakBorders,
+  modeFilter,
+  quantize,
+  toLab,
+  upscaleLabels,
+} from './imageOps';
 
 export interface PhotoOptions {
   /** 물감 색의 수 (번호의 수) */
@@ -31,7 +42,16 @@ export interface PhotoOptions {
    * 조명 때문에 벽이나 옷이 여러 칸으로 쪼개지는 것을 막는다.
    */
   edgeMerge: number;
+  /**
+   * 색이 같아 나뉘지 않는 곳의 윤곽을 선으로 잡아 칸을 나누는 민감도 (0 = 끔).
+   * 흰 바닥 위의 흰 매트, 흰 옷, 흰 강아지처럼 색으로는 구분되지 않는 물건의 테두리를 잡는다.
+   * 클수록 더 약한 윤곽까지 잡지만 잡선이 늘어난다.
+   */
+  contours: number;
 }
+
+/** 윤곽선이 지나가는 자리를 나타내는 색 묶음 번호. 물감 묶음(0..251)과 겹치지 않는다. */
+const LINE = 255;
 
 export const DEFAULT_PHOTO_OPTIONS: PhotoOptions = {
   colors: 14,
@@ -42,12 +62,13 @@ export const DEFAULT_PHOTO_OPTIONS: PhotoOptions = {
   faceLines: true,
   thinLines: true,
   edgeMerge: 0.7,
+  contours: 1,
 };
 
 export interface PhotoPainting {
   width: number;
   height: number;
-  /** 픽셀마다 칸 번호 (1..regions.length). 모든 픽셀이 어느 칸에 속한다. */
+  /** 픽셀마다 칸 번호 (1..regions.length). 윤곽선이 지나가는 자리는 0 이며 칠할 수 없다. */
   seg: Segmentation;
   /** 선화: 픽셀마다 선의 진하기 (0~255) */
   darkness: Uint8Array;
@@ -112,10 +133,10 @@ function skinTone(rgba: Uint8ClampedArray, labels: Uint8Array, skin: Uint8Array,
 }
 
 /** 칸 경계를 따라 일정한 굵기의 선을 그린다. 경계에서 만들므로 모든 칸이 닫혀 있다. */
-function drawLines(ids: Int32Array | Uint16Array, width: number, height: number, halfWidth: number): Uint8Array {
+function drawLines(ids: Int32Array | Uint16Array, width: number, height: number, halfWidth: number, isLine?: Uint8Array): Uint8Array {
   const alpha = new Float32Array(width * height);
   const reach = Math.ceil(halfWidth + 1);
-  const splat = (cx: number, cy: number) => {
+  const splat = (cx: number, cy: number, halfWidth: number) => {
     const x0 = Math.max(0, Math.floor(cx - reach));
     const x1 = Math.min(width - 1, Math.ceil(cx + reach));
     const y0 = Math.max(0, Math.floor(cy - reach));
@@ -129,11 +150,20 @@ function drawLines(ids: Int32Array | Uint16Array, width: number, height: number,
       }
     }
   };
+  // 윤곽선 조각은 이미 두세 픽셀 굵기라, 다른 선과 굵기가 비슷해지도록 가는 붓을 쓴다
+  const lineHalf = Math.max(0.8, halfWidth - 0.9);
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       const id = ids[y * width + x];
-      if (x + 1 < width && ids[y * width + x + 1] !== id) splat(x + 1, y + 0.5);
-      if (y + 1 < height && ids[(y + 1) * width + x] !== id) splat(x + 0.5, y + 1);
+      if (isLine && isLine[id]) {
+        // 윤곽선 조각의 픽셀: 그 자리에 가는 붓으로 점을 찍어 부드러운 선으로 만든다
+        splat(x + 0.5, y + 0.5, lineHalf);
+        continue;
+      }
+      const right = x + 1 < width ? ids[y * width + x + 1] : id;
+      const below = y + 1 < height ? ids[(y + 1) * width + x] : id;
+      if (right !== id && !(isLine && isLine[right])) splat(x + 1, y + 0.5, halfWidth);
+      if (below !== id && !(isLine && isLine[below])) splat(x + 0.5, y + 1, halfWidth);
     }
   }
   const darkness = new Uint8Array(width * height);
@@ -201,6 +231,8 @@ export async function photoToPainting(
     centers[c + 3]++;
   }
   const colorDistance = (a: number, b: number) => {
+    // 윤곽선은 어느 물감 색과도 멀다고 본다: 작은 칸이 선이 아니라 색이 있는 이웃에 합쳐지게 한다
+    if (a === LINE || b === LINE) return 90;
     const na = centers[a * 4 + 3] || 1;
     const nb = centers[b * 4 + 3] || 1;
     return Math.hypot(
@@ -293,17 +325,60 @@ export async function photoToPainting(
     big = modeFilter(big, out.width, out.height, 3, groups);
     comp = components(big, out.width, out.height);
   }
+  // 색이 같아 나뉘지 않은 곳의 윤곽을 선으로 넣는다. 선이 닫혀 있으면 그 안팎이 서로 다른 칸이 된다.
+  if (options.contours > 0) {
+    const softness = Math.max(3.5, Math.max(width, height) / 190);
+    // 다듬은 사진이 아니라 원본에서 찾는다: 다듬기는 색 차이가 작은 경계(흰 바닥과 흰 매트)를 지워 버린다.
+    // 대신 넉넉히 흐려서 천의 결이나 누빔 줄 같은 잔무늬는 사라지게 한다. 물건의 테두리는 흐려도 "턱" 으로 남는다.
+    // 흐릴수록 턱이 완만해지므로 기준도 그만큼 낮춘다.
+    const edges = contourEdges(
+      rgba,
+      width,
+      height,
+      1.0 / softness / options.contours,
+      0.45 / softness / options.contours,
+      Math.round(Math.max(width, height) * 0.06),
+      softness,
+    );
+    // 얼굴 안과 가는 줄 주변은 뺀다: 거기는 따로 선을 그린다
+    let avoid: Uint8Array | null = null;
+    if (thin) {
+      const lines = new Uint8Array(thin.length);
+      for (let i = 0; i < lines.length; i++) lines[i] = thin[i] > 0.2 ? 1 : 0;
+      // 흐린 뒤에는 가는 줄의 흔적이 줄 양옆으로 번지므로, 그 폭만큼 넉넉히 피한다
+      avoid = dilate(lines, width, height, Math.ceil(softness * 1.8) + 2);
+    }
+    const map = new Float32Array(edges.length);
+    for (let i = 0; i < map.length; i++) {
+      if (edges[i] && !(closed && closed[i]) && !(avoid && avoid[i])) map[i] = 1;
+    }
+    const bigMap = upscaleMap(map, width, height, out.width, out.height);
+    let placed = 0;
+    for (let i = 0; i < total; i++) {
+      if (bigMap[i] > 0.3) {
+        big[i] = LINE;
+        placed++;
+      }
+    }
+    if (placed > 0) comp = components(big, out.width, out.height);
+  }
+
+  // 윤곽선은 칠하는 칸이 아니므로 가늘어도 그대로 둔다. 먼지처럼 아주 작은 토막만 이웃에 합친다.
+  const lineDust = Math.max(6, Math.round(total * 0.00002));
   for (let round = 0; round < 60; round++) {
     const selected = new Uint8Array(comp.count + 1);
     let small = 0;
+    let paintable = 0;
     for (let id = 1; id <= comp.count; id++) {
-      if (comp.sizes[id] < minArea) {
+      const isLine = comp.labelOf[id] === LINE;
+      if (!isLine) paintable++;
+      if (comp.sizes[id] < (isLine ? lineDust : minArea)) {
         selected[id] = 1;
         small++;
       }
     }
     if (small === 0) {
-      if (comp.count <= options.maxRegions) break;
+      if (paintable <= options.maxRegions) break;
       minArea = Math.ceil(minArea * 1.35);
       continue;
     }
@@ -318,7 +393,7 @@ export async function photoToPainting(
     const selected = new Uint8Array(comp.count + 1);
     let thin = 0;
     for (const r of info) {
-      if (r.clearance < Math.max(3, out.width / 400) && comp.count - thin > 1) {
+      if (comp.labelOf[r.id] !== LINE && r.clearance < Math.max(3, out.width / 400) && comp.count - thin > 1) {
         selected[r.id] = 1;
         thin++;
       }
@@ -329,7 +404,10 @@ export async function photoToPainting(
 
   // 4. 선화와 번호
   await onStage?.('lines');
-  const darkness = drawLines(comp.ids, out.width, out.height, Math.max(1.5, out.width / 850));
+  // 윤곽선 조각은 그 자체가 선이다
+  const isLineComp = new Uint8Array(comp.count + 1);
+  for (let id = 1; id <= comp.count; id++) if (comp.labelOf[id] === LINE) isLineComp[id] = 1;
+  const darkness = drawLines(comp.ids, out.width, out.height, Math.max(1.5, out.width / 850), isLineComp);
   if (thin) {
     // 가는 줄을 결과 크기로 늘려 선화에 더한다. 흐릿한 가장자리는 잘라 내 또렷한 선으로 만든다.
     const bigThin = upscaleMap(thin, width, height, out.width, out.height);
@@ -359,7 +437,17 @@ export async function photoToPainting(
       if (line > darkness[i]) darkness[i] = line;
     }
   }
-  const seg: Segmentation = { ids: Uint16Array.from(comp.ids), count: comp.count };
+  // 칠하는 칸에만 번호를 매긴다. 윤곽선이 지나가는 자리는 칸 번호 0 (칠할 수 없는 곳) 이 된다.
+  const newId = new Uint16Array(comp.count + 1);
+  const labelOfRegion: number[] = [0];
+  for (let id = 1; id <= comp.count; id++) {
+    if (isLineComp[id]) continue;
+    newId[id] = labelOfRegion.length;
+    labelOfRegion.push(comp.labelOf[id]);
+  }
+  const ids = new Uint16Array(total);
+  for (let i = 0; i < total; i++) ids[i] = newId[comp.ids[i]];
+  const seg: Segmentation = { ids, count: labelOfRegion.length - 1 };
   const regions = describeRegions(seg, out.width, out.height, darkness, 128);
 
   // 묶음마다의 색: 다듬은 사진에서 그 묶음에 속한 픽셀들의 평균. 원본의 색을 그대로 따른다.
@@ -369,6 +457,7 @@ export async function photoToPainting(
     for (let x = 0; x < out.width; x++) {
       const sx = Math.min(width - 1, Math.floor(((x + 0.5) * width) / out.width));
       const label = big[y * out.width + x];
+      if (label === LINE) continue;
       const o = (sy * width + sx) * 4;
       sums[label * 4] += smoothed[o];
       sums[label * 4 + 1] += smoothed[o + 1];
@@ -400,7 +489,7 @@ export async function photoToPainting(
     seg,
     darkness,
     regions,
-    assignment: regions.map((r) => numberOf[comp.labelOf[r.id]]),
+    assignment: regions.map((r) => numberOf[labelOfRegion[r.id]]),
     palette,
     smoothed: { width, height, rgba: smoothed },
   };

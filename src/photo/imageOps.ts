@@ -188,7 +188,7 @@ export interface Quantized {
  */
 export function quantize(lab: Float32Array, k: number, seed = 1): Quantized {
   const n = lab.length / 3;
-  k = Math.max(1, Math.min(k, 255, n));
+  k = Math.max(1, Math.min(k, 250, n));
   const random = seededRandom(seed);
   const step = Math.max(1, Math.floor(n / 40000));
   const sample: number[] = [];
@@ -606,4 +606,92 @@ export function mergeWeakBorders(
   }
   for (let i = 0; i < n; i++) labels[i] = labelOfRoot[find(ids[i])];
   return merged;
+}
+
+/**
+ * 물건의 윤곽을 한 픽셀 굵기의 선으로 찾는다 (캐니 방식).
+ * 색을 묶어서는 나뉘지 않는 윤곽, 예를 들어 흰 바닥 위의 흰 매트나 흰 옷처럼
+ * 양쪽이 같은 색이어도 경계에 색 변화의 "턱" 이 있는 곳을 잡아낸다.
+ *
+ * @param high 이보다 뚜렷한 변화가 있어야 윤곽이 시작된다 (Lab 단위 / 픽셀)
+ * @param low 시작된 윤곽은 이 정도로 약해져도 이어진다
+ * @param minLength 이보다 짧은 토막은 버린다 (픽셀 수)
+ * @param softness 윤곽을 찾기 전에 흐리는 정도 (픽셀). 클수록 천의 결 같은 잔무늬를 무시한다.
+ * @returns 윤곽이 지나가는 픽셀 표시
+ */
+export function contourEdges(
+  rgba: Uint8ClampedArray | Uint8Array,
+  width: number,
+  height: number,
+  high: number,
+  low: number,
+  minLength: number,
+  softness = 1,
+): Uint8Array {
+  const lab = toLab(rgba);
+  const n = width * height;
+  // 세 채널의 변화를 합쳐 변화의 세기와 방향을 구한다
+  const jxx = new Float32Array(n);
+  const jyy = new Float32Array(n);
+  const jxy = new Float32Array(n);
+  for (let c = 0; c < 3; c++) {
+    const channel = new Float32Array(n);
+    for (let i = 0; i < n; i++) channel[i] = lab[i * 3 + c];
+    const soft = blur(channel, width, height, softness);
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const i = y * width + x;
+        const gx = (soft[y * width + Math.min(width - 1, x + 1)] - soft[y * width + Math.max(0, x - 1)]) / 2;
+        const gy = (soft[Math.min(height - 1, y + 1) * width + x] - soft[Math.max(0, y - 1) * width + x]) / 2;
+        jxx[i] += gx * gx;
+        jyy[i] += gy * gy;
+        jxy[i] += gx * gy;
+      }
+    }
+  }
+  const mag = new Float32Array(n);
+  for (let i = 0; i < n; i++) mag[i] = Math.sqrt(jxx[i] + jyy[i]);
+
+  // 가는 선으로: 변화가 가장 큰 방향으로 양옆보다 세지 않은 픽셀은 버린다
+  const ridge = new Float32Array(n);
+  for (let y = 1; y < height - 1; y++) {
+    for (let x = 1; x < width - 1; x++) {
+      const i = y * width + x;
+      if (mag[i] < low) continue;
+      const angle = 0.5 * Math.atan2(2 * jxy[i], jxx[i] - jyy[i]);
+      const dx = Math.round(Math.cos(angle));
+      const dy = Math.round(Math.sin(angle));
+      if (mag[i] >= mag[i + dy * width + dx] && mag[i] >= mag[i - dy * width - dx]) ridge[i] = mag[i];
+    }
+  }
+
+  // 뚜렷한 곳에서 출발해, 이어져 있는 조금 약한 곳까지 따라간다
+  const edge = new Uint8Array(n);
+  const stack = new Int32Array(n);
+  const group = new Int32Array(n);
+  for (let start = 0; start < n; start++) {
+    if (ridge[start] < high || edge[start]) continue;
+    let top = 0;
+    let size = 0;
+    stack[top++] = start;
+    edge[start] = 1;
+    while (top > 0) {
+      const i = stack[--top];
+      group[size++] = i;
+      const x = i % width;
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const nx = x + dx;
+          const j = i + dy * width + dx;
+          if (nx < 0 || nx >= width || j < 0 || j >= n || edge[j] || ridge[j] < low) continue;
+          edge[j] = 1;
+          stack[top++] = j;
+        }
+      }
+    }
+    // 짧은 토막은 윤곽이 아니라 얼룩이나 무늬다
+    if (size < minLength) for (let k = 0; k < size; k++) edge[group[k]] = 2;
+  }
+  for (let i = 0; i < n; i++) if (edge[i] === 2) edge[i] = 0;
+  return edge;
 }

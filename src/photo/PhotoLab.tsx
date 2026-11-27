@@ -62,7 +62,8 @@ function drawPainting(canvas: HTMLCanvasElement | null, painting: PhotoPainting,
   const fills = regions.map((r) => (filled ? (colorOf.get(assignment[r.id - 1]) ?? [255, 253, 248]) : [255, 253, 248]));
   const image = ctx.createImageData(width, height);
   for (let i = 0; i < darkness.length; i++) {
-    const fill = fills[seg.ids[i] - 1];
+    // 칸 번호 0 은 윤곽선이 지나가는 자리다
+    const fill = fills[seg.ids[i] - 1] ?? [255, 253, 248];
     const a = darkness[i] / 255;
     const o = i * 4;
     image.data[o] = fill[0] * (1 - a) + LINE_COLOR[0] * a;
@@ -93,6 +94,7 @@ export function PhotoLab() {
   const [faceLines, setFaceLines] = useState(DEFAULT_PHOTO_OPTIONS.faceLines);
   const [thinLines, setThinLines] = useState(DEFAULT_PHOTO_OPTIONS.thinLines);
   const [edgeMerge, setEdgeMerge] = useState(DEFAULT_PHOTO_OPTIONS.edgeMerge);
+  const [contours, setContours] = useState(DEFAULT_PHOTO_OPTIONS.contours);
   const [painting, setPainting] = useState<PhotoPainting | null>(null);
   const [stage, setStage] = useState<PhotoStage | null>(null);
   const [seconds, setSeconds] = useState<number | null>(null);
@@ -119,7 +121,7 @@ export function PhotoLab() {
           photo.rgba,
           photo.width,
           photo.height,
-          { ...DEFAULT_PHOTO_OPTIONS, colors, maxRegions, smoothing, faceLines, thinLines, edgeMerge },
+          { ...DEFAULT_PHOTO_OPTIONS, colors, maxRegions, smoothing, faceLines, thinLines, edgeMerge, contours },
           async (next) => {
             if (cancelled) throw new Error('cancelled');
             setStage(next);
@@ -141,7 +143,7 @@ export function PhotoLab() {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [photo, colors, maxRegions, smoothing, faceLines, thinLines, edgeMerge]);
+  }, [photo, colors, maxRegions, smoothing, faceLines, thinLines, edgeMerge, contours]);
 
   useEffect(() => {
     if (photo) drawPixels(originalRef.current, photo.width, photo.height, photo.rgba);
@@ -228,6 +230,10 @@ export function PhotoLab() {
           <label className="field">
             <span>흐릿한 경계 합치기 {edgeMerge === 0 ? '끔' : edgeMerge.toFixed(1)}</span>
             <input type="range" min={0} max={2} step={0.1} value={edgeMerge} data-testid="edge-merge" onChange={(e) => setEdgeMerge(Number(e.target.value))} />
+          </label>
+          <label className="field">
+            <span>같은 색 사이의 윤곽 잡기 {contours === 0 ? '끔' : contours.toFixed(1)}</span>
+            <input type="range" min={0} max={2.5} step={0.1} value={contours} data-testid="contours" onChange={(e) => setContours(Number(e.target.value))} />
           </label>
           <label className="field field--check">
             <input type="checkbox" checked={thinLines} data-testid="thin-lines" onChange={(e) => setThinLines(e.target.checked)} />
