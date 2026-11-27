@@ -349,3 +349,32 @@ describe('색칠 그림다운 선화로 다듬기', () => {
     expect(p.palette).toHaveLength(1);
   });
 });
+
+describe('살색', () => {
+  it('얼굴의 물감 색은 그늘이나 비슷한 색의 다른 물건에 끌려 어두워지지 않는다', async () => {
+    // 회색 벽 앞의 얼굴. 얼굴의 오른쪽 1/4 은 그늘져 있고, 벽 아래에는 얼굴보다 어두운 갈색 가구가 넓게 있다.
+    const w = 200;
+    const h = 160;
+    const LIT = [228, 180, 152];
+    const SHADE = [176, 128, 104];
+    const rgba = new Uint8ClampedArray(w * h * 4);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        let color = [206, 208, 212];
+        if (y >= 118) color = [150, 104, 78];
+        if (Math.hypot(x - 100, y - 62) < 30) color = x > 114 ? SHADE : LIT;
+        rgba.set([...color, 255], (y * w + x) * 4);
+      }
+    }
+    // 색을 적게 써서 얼굴, 그늘, 가구가 한 묶음으로 뭉치기 쉽게 한다
+    const options = { colors: 3, maxRegions: 50, outputSize: 400, workSize: 200, smoothing: 1, faceLines: true, thinLines: false, edgeMerge: 0 };
+    const p = await photoToPainting(rgba, w, h, options);
+    const face = p.seg.ids[62 * 2 * p.width + 90 * 2];
+    const color = p.palette.find((e) => e.number === p.assignment[face - 1])!.color;
+    const rgb = [1, 3, 5].map((o) => parseInt(color.slice(o, o + 2), 16));
+    // 빛을 받은 쪽의 살색에 가깝다
+    for (let c = 0; c < 3; c++) expect(Math.abs(rgb[c] - LIT[c])).toBeLessThan(10);
+    // 그늘진 쪽도 같은 얼굴 칸이다
+    expect(p.seg.ids[62 * 2 * p.width + 122 * 2]).toBe(face);
+  });
+});

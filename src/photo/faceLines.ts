@@ -161,9 +161,18 @@ export function upscaleMap(src: Float32Array, width: number, height: number, out
  * 너무 큰 덩어리는 건드리지 않는다: 사진 대부분이 살색 계열(나무, 베이지색 벽)이면 얼굴이 아니기 때문이다.
  * labels 를 직접 고친다.
  * @param maxFraction 이 비율(사진 전체 대비)보다 큰 덩어리는 그대로 둔다
+ * @param skinLabel 주면 덩어리마다 가장 넓은 묶음을 고르는 대신 모두 이 묶음으로 만든다 (살색 전용 묶음)
  * @returns 한 면으로 만든 덩어리 가운데 가장 큰 것의 픽셀 수 (없으면 0). 얼굴의 크기를 짐작하는 데 쓴다.
  */
-export function flattenSkin(labels: Uint8Array, mask: Uint8Array, width: number, height: number, k: number, maxFraction = 0.12): number {
+export function flattenSkin(
+  labels: Uint8Array,
+  mask: Uint8Array,
+  width: number,
+  height: number,
+  k: number,
+  maxFraction = 0.12,
+  skinLabel?: number,
+): number {
   const n = width * height;
   const seen = new Uint8Array(n);
   const stack = new Int32Array(n);
@@ -205,6 +214,7 @@ export function flattenSkin(labels: Uint8Array, mask: Uint8Array, width: number,
     if (size > limit) continue;
     let best = 0;
     for (let c = 1; c < k; c++) if (counts[c] > counts[best]) best = c;
+    if (skinLabel !== undefined) best = skinLabel;
     for (const i of members) labels[i] = best;
     if (size > largest) largest = size;
   }

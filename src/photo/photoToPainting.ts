@@ -79,6 +79,35 @@ const CHROMA_WEIGHT = 1.7;
 const toHex = (r: number, g: number, b: number) =>
   '#' + [r, g, b].map((v) => Math.round(Math.min(255, Math.max(0, v))).toString(16).padStart(2, '0')).join('').toUpperCase();
 
+/**
+ * 원본 사진에서 살색을 구한다.
+ * 살색 면에 속한 픽셀 가운데 실제로 살색인 것만 보고, 그중 어두운 쪽 40% (그늘, 주름, 머리카락 그림자)는 빼고 평균 낸다.
+ * 사람 눈이 "이 사람의 피부색" 으로 느끼는 것은 빛을 받은 쪽의 색이기 때문이다.
+ */
+function skinTone(rgba: Uint8ClampedArray, labels: Uint8Array, skin: Uint8Array, skinLabel: number): [number, number, number] | null {
+  const brightness: number[] = [];
+  for (let i = 0; i < labels.length; i++) {
+    if (labels[i] !== skinLabel || !skin[i]) continue;
+    brightness.push(0.299 * rgba[i * 4] + 0.587 * rgba[i * 4 + 1] + 0.114 * rgba[i * 4 + 2]);
+  }
+  if (brightness.length === 0) return null;
+  const sorted = Float64Array.from(brightness).sort();
+  const cut = sorted[Math.floor(sorted.length * 0.4)];
+  let r = 0;
+  let g = 0;
+  let b = 0;
+  let n = 0;
+  for (let i = 0; i < labels.length; i++) {
+    if (labels[i] !== skinLabel || !skin[i]) continue;
+    if (0.299 * rgba[i * 4] + 0.587 * rgba[i * 4 + 1] + 0.114 * rgba[i * 4 + 2] < cut) continue;
+    r += rgba[i * 4];
+    g += rgba[i * 4 + 1];
+    b += rgba[i * 4 + 2];
+    n++;
+  }
+  return n > 0 ? [r / n, g / n, b / n] : null;
+}
+
 /** 칸 경계를 따라 일정한 굵기의 선을 그린다. 경계에서 만들므로 모든 칸이 닫혀 있다. */
 function drawLines(ids: Int32Array | Uint16Array, width: number, height: number, halfWidth: number): Uint8Array {
   const alpha = new Float32Array(width * height);
@@ -155,8 +184,12 @@ export async function photoToPainting(
     lab[i + 2] *= CHROMA_WEIGHT;
   }
   const { labels: rough, k } = quantize(lab, options.colors, 7);
+  // 살색 전용 묶음의 번호. 얼굴과 팔을 한 면으로 만들 때만 쓰인다.
+  const SKIN = k;
+  // 묶음의 수: 살색 전용 묶음이 생기면 하나 늘어난다
+  let groups = k;
   // 묶음마다의 대표 색 (칸을 합칠 때 색이 비슷한 이웃을 고르는 데 쓴다)
-  const centers = new Float64Array(k * 4);
+  const centers = new Float64Array((k + 1) * 4);
   for (let i = 0; i < rough.length; i++) {
     const c = rough[i] * 4;
     centers[c] += lab[i * 3];
@@ -193,11 +226,26 @@ export async function photoToPainting(
   // 2-1. 얼굴: 눈·코·입을 칸이 아니라 선으로 남긴다
   // 선을 그려도 되는 곳(작업 크기)과, 얼굴의 크기를 짐작한 값
   let face: { inside: Uint8Array; size: number } | null = null;
+  let skinColor: [number, number, number] | null = null;
   if (skin && closed) {
     // 살색 안에 뚫린 작은 구멍(눈, 입, 콧구멍)을 얼굴과 같은 색 묶음으로 메운다
     fillHolesWithSkin(labels, skin, closed, width, height);
     // 얼굴과 팔을 한 가지 살색 면으로 만든다 (명암으로 쪼개진 칸을 없앤다)
-    const largest = flattenSkin(labels, closed, width, height, k);
+    // 살색은 색을 묶어 나온 묶음 가운데 하나를 빌려 쓰지 않고 전용 묶음으로 둔다.
+    // 빌려 쓰면 그 묶음에 함께 들어 있는 그늘이나 갈색 물건의 색이 섞여 살색이 어둡게 나온다.
+    const largest = flattenSkin(labels, closed, width, height, k, 0.12, SKIN);
+    if (largest > 0) {
+      groups = k + 1;
+      // 칸을 합칠 때 쓰는 살색 묶음의 대표 색
+      for (let i = 0; i < labels.length; i++) {
+        if (labels[i] !== SKIN || !skin[i]) continue;
+        centers[SKIN * 4] += lab[i * 3];
+        centers[SKIN * 4 + 1] += lab[i * 3 + 1];
+        centers[SKIN * 4 + 2] += lab[i * 3 + 2];
+        centers[SKIN * 4 + 3]++;
+      }
+      skinColor = skinTone(rgba, labels, skin, SKIN);
+    }
     // 가장 큰 살색 면의 넓이로 얼굴의 폭을 짐작한다. 한 면으로 만든 것이 없으면 사진 크기로 어림한다.
     const size = largest > 0 ? Math.sqrt(largest) : Math.sqrt(width * height) * 0.25;
     // 살색 면의 테두리(머리카락, 옷과 맞닿은 곳)는 뺀다: 거기는 칸의 경계선이 이미 있다
@@ -208,7 +256,7 @@ export async function photoToPainting(
   await onStage?.('regions');
   const out = fitSize(width, height, options.outputSize);
   let big = out.width === width && out.height === height ? labels : upscaleLabels(labels, width, height, out.width, out.height);
-  if (big !== labels) big = modeFilter(big, out.width, out.height, 2, k);
+  if (big !== labels) big = modeFilter(big, out.width, out.height, 2, groups);
   const total = out.width * out.height;
 
   // 너무 작은 칸은 번호를 적거나 칠하기 어렵다: 이웃 칸에 합친다.
@@ -239,7 +287,7 @@ export async function photoToPainting(
       comp = components(big, out.width, out.height);
     }
     // 합친 뒤 남은 경계의 잔물결을 한 번 더 다듬는다
-    big = modeFilter(big, out.width, out.height, 3, k);
+    big = modeFilter(big, out.width, out.height, 3, groups);
     comp = components(big, out.width, out.height);
   }
   for (let round = 0; round < 60; round++) {
@@ -312,7 +360,7 @@ export async function photoToPainting(
   const regions = describeRegions(seg, out.width, out.height, darkness, 128);
 
   // 묶음마다의 색: 다듬은 사진에서 그 묶음에 속한 픽셀들의 평균. 원본의 색을 그대로 따른다.
-  const sums = new Float64Array(k * 4);
+  const sums = new Float64Array(groups * 4);
   for (let y = 0; y < out.height; y++) {
     const sy = Math.min(height - 1, Math.floor(((y + 0.5) * height) / out.height));
     for (let x = 0; x < out.width; x++) {
@@ -327,9 +375,16 @@ export async function photoToPainting(
   }
   // 쓰이는 묶음에만 번호를 매긴다. 넓게 쓰이는 색이 앞 번호다.
   const used = [];
-  for (let label = 0; label < k; label++) if (sums[label * 4 + 3] > 0) used.push(label);
+  // 살색 묶음의 색은 원본 사진의 살색에서 따로 구한 값으로 바꾼다
+  if (skinColor && sums[SKIN * 4 + 3] > 0) {
+    const count = sums[SKIN * 4 + 3];
+    sums[SKIN * 4] = skinColor[0] * count;
+    sums[SKIN * 4 + 1] = skinColor[1] * count;
+    sums[SKIN * 4 + 2] = skinColor[2] * count;
+  }
+  for (let label = 0; label < groups; label++) if (sums[label * 4 + 3] > 0) used.push(label);
   used.sort((a, b) => sums[b * 4 + 3] - sums[a * 4 + 3]);
-  const numberOf = new Int16Array(k);
+  const numberOf = new Int16Array(groups);
   const palette: PaletteEntry[] = used.map((label, index) => {
     numberOf[label] = index + 1;
     const count = sums[label * 4 + 3];
