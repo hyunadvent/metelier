@@ -52,6 +52,8 @@ export interface Atelier3DEvents {
   onActivityChange(activity: Activity | null): void;
   /** 의자에 앉은 채로 이젤을 눌렀을 때 */
   onEasel(): void;
+  /** 걸이대의 카메라를 눌렀을 때 */
+  onCamera(): void;
   /** 바꿀 수 있는 화분을 눌렀을 때 */
   onPlantSpot(slot: PlantSlot): void;
   /** 아직 준비 중인 활동을 눌렀을 때 */
@@ -243,6 +245,9 @@ export class Atelier3DView {
         break;
       case 'plant':
         this.events.onPlantSpot('window-stand');
+        break;
+      case 'camera':
+        this.events.onCamera();
         break;
       case 'bookshelf':
         if (this.activity === 'read') break;

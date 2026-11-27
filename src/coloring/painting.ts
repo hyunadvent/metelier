@@ -1,5 +1,6 @@
 import type { Rgb } from './engine/PaintEngine';
 import { decodeRegionIds } from './engine/regionMap';
+import { loadStoredPainting } from '../storage/db';
 
 /** 붓에 묻힐 수 있는 것: 물감 번호 또는 지우개. */
 export type Tool = number | 'eraser';
@@ -71,20 +72,40 @@ function hiddenByLines(linesRgba: Uint8ClampedArray): Uint8Array {
   return hidden;
 }
 
-export async function loadPainting(id: string): Promise<LoadedPainting> {
-  const baseUrl = `${import.meta.env.BASE_URL}paintings/${id}/`;
-  const response = await fetch(`${baseUrl}meta.json`);
-  if (!response.ok) throw new Error(`그림 정보를 불러오지 못했습니다: ${id}`);
-  const meta = (await response.json()) as PaintingMeta;
+/** 사진으로 만든 그림의 이름표. 이런 그림은 서버가 아니라 이 브라우저에 저장되어 있다. */
+export const PHOTO_PAINTING_PREFIX = 'photo-';
+
+export function isPhotoPaintingId(id: string): boolean {
+  return id.startsWith(PHOTO_PAINTING_PREFIX);
+}
+
+async function fromFiles(meta: PaintingMeta, urls: { regions: string; lines: string; reference: string }): Promise<LoadedPainting> {
   const [regions, lines] = await Promise.all([
-    readPixels(baseUrl + meta.files.regions, meta.width, meta.height),
-    readPixels(baseUrl + meta.files.lines, meta.width, meta.height),
+    readPixels(urls.regions, meta.width, meta.height),
+    readPixels(urls.lines, meta.width, meta.height),
   ]);
   return {
     meta,
     regionIds: decodeRegionIds(regions),
     hidden: hiddenByLines(lines),
-    linesUrl: baseUrl + meta.files.lines,
-    referenceUrl: baseUrl + meta.files.reference,
+    linesUrl: urls.lines,
+    referenceUrl: urls.reference,
   };
+}
+
+export async function loadPainting(id: string): Promise<LoadedPainting> {
+  if (isPhotoPaintingId(id)) {
+    const stored = await loadStoredPainting(id);
+    if (!stored) throw new Error('이 그림은 이 브라우저에 저장되어 있지 않습니다.');
+    return fromFiles(stored.meta as PaintingMeta, stored);
+  }
+  const baseUrl = `${import.meta.env.BASE_URL}paintings/${id}/`;
+  const response = await fetch(`${baseUrl}meta.json`);
+  if (!response.ok) throw new Error(`그림 정보를 불러오지 못했습니다: ${id}`);
+  const meta = (await response.json()) as PaintingMeta;
+  return fromFiles(meta, {
+    regions: baseUrl + meta.files.regions,
+    lines: baseUrl + meta.files.lines,
+    reference: baseUrl + meta.files.reference,
+  });
 }

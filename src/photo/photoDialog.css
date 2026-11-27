@@ -1,0 +1,269 @@
+.photo-dialog__backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  box-sizing: border-box;
+  background: rgb(91 70 54 / 38%);
+}
+
+.photo-dialog {
+  position: relative;
+  display: grid;
+  gap: 14px;
+  width: min(560px, 100%);
+  max-height: 100%;
+  overflow: auto;
+  padding: 22px 22px 20px;
+  box-sizing: border-box;
+  border-radius: 22px;
+  border: 3px solid #ecd9c2;
+  background: #fffaf2;
+  box-shadow: 0 14px 36px rgb(91 70 54 / 32%);
+  color: #5b4636;
+}
+
+.photo-dialog__title {
+  margin: 0 32px 0 0;
+  font-size: 19px;
+}
+
+.photo-dialog__close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: #a08a78;
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.photo-dialog input[type='file'] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.photo-dialog__drop {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  padding: 38px 16px;
+  border-radius: 16px;
+  border: 3px dashed #d9a56c;
+  background: #fff;
+  text-align: center;
+  cursor: pointer;
+}
+
+.photo-dialog__drop strong {
+  font-size: 18px;
+}
+
+.photo-dialog__drop span {
+  font-size: 13px;
+  color: #8f7a68;
+}
+
+.photo-dialog__drop:focus-within,
+.photo-dialog__button:focus-within {
+  outline: 3px solid #6fb7e9;
+  outline-offset: 2px;
+}
+
+.photo-dialog__progress {
+  display: grid;
+  gap: 10px;
+  padding: 30px 6px;
+  text-align: center;
+}
+
+.photo-dialog__progress p {
+  margin: 0;
+  font-weight: 600;
+}
+
+.photo-dialog__bar {
+  height: 12px;
+  border-radius: 6px;
+  background: #f1e2cf;
+  overflow: hidden;
+}
+
+.photo-dialog__bar span {
+  display: block;
+  height: 100%;
+  border-radius: 6px;
+  background: #f4a24c;
+  transition: width 0.2s;
+}
+
+.photo-dialog__previews {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.photo-dialog__previews figure {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  min-width: 0;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.photo-dialog__previews img {
+  display: block;
+  width: 100%;
+  max-height: 42vh;
+  object-fit: contain;
+  border-radius: 10px;
+  border: 2px solid #ecd9c2;
+  background: #fffdf8;
+  box-sizing: border-box;
+}
+
+.photo-dialog__count,
+.photo-dialog__error {
+  margin: 0;
+  text-align: center;
+  font-size: 14px;
+}
+
+.photo-dialog__error {
+  color: #c0453c;
+  font-weight: 600;
+}
+
+.photo-dialog__levels {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+}
+
+.photo-dialog__levels button {
+  min-width: 84px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 2px solid #ecd9c2;
+  background: #fff;
+  color: inherit;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.photo-dialog__levels button[aria-pressed='true'] {
+  border-color: #d9a56c;
+  background: #fbe3c0;
+}
+
+.photo-dialog__levels button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.photo-dialog__actions {
+  display: flex;
+  gap: 10px;
+}
+
+.photo-dialog__button {
+  position: relative;
+  flex: 1;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 2px solid #ecd9c2;
+  background: #fff;
+  color: inherit;
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  text-align: center;
+  cursor: pointer;
+}
+
+.photo-dialog__button--primary {
+  flex: 1.6;
+  border-color: #e0913a;
+  background: #f4a24c;
+  color: #fff;
+}
+
+.photo-dialog__button:disabled,
+.photo-dialog__button--disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+/* ── 이젤에서 그림 고르기 ───────────────────────── */
+
+.painting-picker__list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.painting-picker__item {
+  position: relative;
+}
+
+.painting-picker__open {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+  padding: 8px;
+  border-radius: 14px;
+  border: 2px solid #ecd9c2;
+  background: #fff;
+  color: inherit;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.painting-picker__open img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: 8px;
+}
+
+.painting-picker__open span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.painting-picker__delete {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border-radius: 50%;
+  border: 2px solid #ecd9c2;
+  background: #fffaf2;
+  color: #c0453c;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}

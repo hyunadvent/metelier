@@ -2,14 +2,25 @@ import { useEffect, useRef, useState } from 'react';
 import { Atelier3DView } from './Atelier3DView';
 import { loadDecor, PLANT_INFO, PLANT_KINDS, saveDecor, type PlantKind, type PlantSlot } from './decor';
 import type { Activity } from './room';
+import { PaintingPicker } from '../photo/PaintingPicker';
+import { PhotoDialog } from '../photo/PhotoDialog';
+import { listStoredPaintings, type StoredPaintingSummary } from '../storage/db';
 import '../atelier/atelier.css';
 import './atelier3d.css';
 
 interface Atelier3DScreenProps {
   /** 색칠을 마치고 돌아왔을 때는 의자에 앉은 채로 시작한다. */
   startSeated: boolean;
-  onStartColoring(): void;
+  /** @param paintingId 칠할 그림. 주지 않으면 기본 그림 */
+  onStartColoring(paintingId?: string): void;
 }
+
+/** 처음부터 들어 있는 그림 (고르는 창의 첫 칸) */
+const BUILTIN_PAINTING = {
+  id: 'hill-house',
+  title: '언덕 위의 집',
+  thumbnail: `${import.meta.env.BASE_URL}paintings/hill-house/reference.png`,
+};
 
 const HINTS: Record<Activity | 'none', string> = {
   none: '바닥을 누르거나 WASD로 걷기 · 캐릭터나 스페이스로 점프 · 끌어서 둘러보기',
@@ -26,6 +37,10 @@ export function Atelier3DScreen({ startSeated, onStartColoring }: Atelier3DScree
   const [decor, setDecor] = useState(loadDecor);
   /** 화분을 고르는 중인 자리. 고르는 창이 닫혀 있으면 null. */
   const [plantSlot, setPlantSlot] = useState<PlantSlot | null>(null);
+  /** 카메라를 눌러 사진을 올리는 창이 열려 있는지 */
+  const [photoOpen, setPhotoOpen] = useState(false);
+  /** 이젤에서 그림을 고르는 중이면 사진으로 만든 그림의 목록 */
+  const [choices, setChoices] = useState<StoredPaintingSummary[] | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -42,7 +57,13 @@ export function Atelier3DScreen({ startSeated, onStartColoring }: Atelier3DScree
         host,
         {
           onActivityChange: setActivity,
-          onEasel: () => startRef.current(),
+          onEasel: () => {
+            // 사진으로 만든 그림이 있으면 고르게 하고, 없으면 기본 그림을 바로 연다
+            listStoredPaintings()
+              .catch(() => [])
+              .then((photos) => (photos.length > 0 ? setChoices(photos) : startRef.current()));
+          },
+          onCamera: () => setPhotoOpen(true),
           onPlantSpot: setPlantSlot,
           onUnavailable: (hotspot) => setToast(`"${hotspot.label}"는 곧 만나요`),
         },
@@ -107,6 +128,16 @@ export function Atelier3DScreen({ startSeated, onStartColoring }: Atelier3DScree
             ×
           </button>
         </div>
+      )}
+      {photoOpen && <PhotoDialog onClose={() => setPhotoOpen(false)} onStart={(id) => onStartColoring(id)} />}
+      {choices && (
+        <PaintingPicker
+          builtin={BUILTIN_PAINTING}
+          photos={choices}
+          onPick={(id) => onStartColoring(id)}
+          onClose={() => setChoices(null)}
+          onChange={setChoices}
+        />
       )}
       {toast && <p className="atelier__toast">{toast}</p>}
     </div>

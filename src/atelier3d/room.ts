@@ -18,7 +18,7 @@ import {
   woodFloorTexture,
 } from './textures';
 
-export type Hotspot3DId = 'easel' | 'stool' | 'window' | 'bookshelf' | 'plant';
+export type Hotspot3DId = 'easel' | 'stool' | 'window' | 'bookshelf' | 'plant' | 'camera';
 
 /** 캐릭터가 자리를 잡고 하는 활동: 그림 그리기, 차 마시기, 책 읽기 */
 export type Activity = 'paint' | 'tea' | 'read';
@@ -889,6 +889,39 @@ export function buildAtelierRoom(decor: AtelierDecor = DEFAULT_DECOR): AtelierRo
   }
   const apron = add(curtainGeometry(0.36, 0.66, { folds: 2, depth: 0.02 }), keep(new THREE.MeshStandardMaterial({ color: 0xf7b6c8, map: linen, roughness: 1, side: THREE.DoubleSide })), rack);
   apron.position.set(-0.24, 1.75, -0.09);
+  // 걸이대에 끈으로 걸어 둔 카메라. 누르면 사진을 골라 색칠 그림으로 만든다.
+  const CAMERA_HOOK = 0.24;
+  const CAMERA_SCALE = 1.3;
+  const cam = addGroup(CAMERA_HOOK, 1.75 - 0.39 * CAMERA_SCALE, -0.085, rack);
+  cam.scale.setScalar(CAMERA_SCALE);
+  cam.rotation.z = -0.05;
+  // 끈: 고리에서 몸통 양쪽으로 내려온다
+  for (const side of [-1, 1]) {
+    const strap = box(0.012, 0.36, 0.006, 0x8a5a3c, side * 0.055, 0.215, 0.012, cam, 0.002);
+    strap.rotation.z = side * 0.3;
+    strap.castShadow = false;
+    ball(0.011, 0xcfd3d6, side * 0.1, 0.055, 0.01, cam);
+  }
+  // 몸통: 민트색 몸통에 크림색 윗부분
+  box(0.24, 0.13, 0.07, 0x8fd3c1, 0, -0.01, 0, cam, 0.022);
+  box(0.245, 0.04, 0.074, CREAM, 0, 0.04, 0, cam, 0.016);
+  box(0.07, 0.035, 0.05, CREAM, -0.02, 0.07, 0, cam, 0.012);
+  // 셔터와 감기 손잡이
+  cylinder(0.015, 0.015, 0.016, 0xf48fb1, 0.075, 0.066, 0, cam);
+  cylinder(0.02, 0.02, 0.012, 0xcfd3d6, -0.085, 0.064, 0, cam);
+  // 렌즈: 방 안쪽을 향한다
+  const lens = (r: number, len: number, color: number, z: number) => {
+    const m = cylinder(r, r, len, color, 0, -0.012, z, cam);
+    m.rotation.x = Math.PI / 2;
+    return m;
+  };
+  lens(0.052, 0.03, 0xf2f2f0, -0.045);
+  lens(0.043, 0.03, 0x5b4636, -0.062);
+  lens(0.03, 0.006, 0x3b5a7a, -0.079).castShadow = false;
+  ball(0.009, 0xffffff, 0.012, 0, -0.082, cam).castShadow = false;
+  // 플래시와 뷰파인더
+  box(0.04, 0.022, 0.006, 0xfff3c4, 0.08, 0.036, -0.038, cam, 0.004).castShadow = false;
+  box(0.026, 0.018, 0.006, 0x5b4636, -0.02, 0.07, -0.026, cam, 0.004).castShadow = false;
   hang('door-near', DOOR_X - 1.5, 1.7, front, 0.8, 0.6, -1);
   hang('door-far', DOOR_X - 2.9, 1.7, front, 0.5, 0.66, -1);
 
@@ -978,6 +1011,7 @@ export function buildAtelierRoom(decor: AtelierDecor = DEFAULT_DECOR): AtelierRo
       { id: 'window', label: '창가에서 차 마시기', icon: '☕', position: new THREE.Vector3(2.15, 0.95, back + 0.72), available: true },
       { id: 'plant', label: '화분 바꾸기', icon: '🌱', position: new THREE.Vector3(0.5, 1.9, back + 0.42), available: true },
       { id: 'bookshelf', label: '책 읽기', icon: '📖', position: new THREE.Vector3(halfW - 0.55, 1.75, -1.65), available: true },
+      { id: 'camera', label: '사진으로 색칠 그림 만들기', icon: '📷', position: new THREE.Vector3(DOOR_X + 1.25 + 0.24, 2.08, front - 0.14), available: true },
     ],
     setPlant(slot: PlantSlot, kind: PlantKind) {
       if (slot === 'window-stand') growPlant(kind);

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { buildPackage, hexToRgb, labelSize, LINE_COLOR, savePackage } from '../editor/exportPainting';
-import { DEFAULT_PHOTO_OPTIONS, fitSize, photoToPainting, type PhotoPainting, type PhotoStage } from './photoToPainting';
+import { DEFAULT_PHOTO_OPTIONS, photoToPainting, type PhotoPainting, type PhotoStage } from './photoToPainting';
+import { readPhoto, type Photo } from './readPhoto';
 
 const STAGE_LABEL: Record<PhotoStage, string> = {
   smooth: '만화풍으로 다듬는 중…',
@@ -9,40 +10,6 @@ const STAGE_LABEL: Record<PhotoStage, string> = {
   lines: '선과 번호를 넣는 중…',
 };
 const TEST_ID = 'photo-test';
-
-interface Photo {
-  name: string;
-  width: number;
-  height: number;
-  rgba: Uint8ClampedArray;
-  /** 결과 크기로 맞춘 같은 사진. 얼굴의 선을 정밀하게 뽑는 데 쓴다. */
-  detail: { width: number; height: number; rgba: Uint8ClampedArray };
-}
-
-/** 사진 파일을 읽어 작업 크기로 맞춘 픽셀을 돌려준다. */
-async function readPhoto(file: File, workSize: number): Promise<Photo> {
-  const bitmap = await createImageBitmap(file);
-  const { width, height } = fitSize(bitmap.width, bitmap.height, Math.min(workSize, Math.max(bitmap.width, bitmap.height)));
-  const canvas = document.createElement('canvas');
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
-  ctx.fillStyle = '#fff';
-  ctx.fillRect(0, 0, width, height);
-  ctx.imageSmoothingQuality = 'high';
-  ctx.drawImage(bitmap, 0, 0, width, height);
-  const rgba = ctx.getImageData(0, 0, width, height).data;
-  // 결과 크기로도 한 벌 만든다
-  const big = fitSize(width, height, DEFAULT_PHOTO_OPTIONS.outputSize);
-  canvas.width = big.width;
-  canvas.height = big.height;
-  ctx.fillStyle = '#fff';
-  ctx.fillRect(0, 0, big.width, big.height);
-  ctx.imageSmoothingQuality = 'high';
-  ctx.drawImage(bitmap, 0, 0, big.width, big.height);
-  bitmap.close();
-  return { name: file.name, width, height, rgba, detail: { ...big, rgba: ctx.getImageData(0, 0, big.width, big.height).data } };
-}
 
 function drawPixels(canvas: HTMLCanvasElement | null, width: number, height: number, rgba: Uint8ClampedArray): void {
   if (!canvas) return;

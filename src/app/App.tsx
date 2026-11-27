@@ -27,12 +27,16 @@ export function App() {
   const [screen, setScreen] = useState<'atelier' | 'coloring'>(launch.painting ? 'coloring' : 'atelier');
   // 색칠을 하다가 돌아오면 의자에 앉은 채로 화실이 열린다.
   const [returning, setReturning] = useState(false);
-  const startColoring = () => setScreen('coloring');
+  const [paintingId, setPaintingId] = useState(launch.painting ?? DEFAULT_PAINTING);
+  const startColoring = (id: string = launch.painting ?? DEFAULT_PAINTING) => {
+    setPaintingId(id);
+    setScreen('coloring');
+  };
 
   if (screen === 'coloring') {
     return (
       <ColoringScreen
-        paintingId={launch.painting ?? DEFAULT_PAINTING}
+        paintingId={paintingId}
         backdrop={launch.atelier === '2d' ? { kind: '2d', layout: PLACEHOLDER_ATELIER } : { kind: '3d' }}
         onExit={() => {
           setReturning(true);
@@ -42,7 +46,7 @@ export function App() {
     );
   }
   return launch.atelier === '2d' ? (
-    <AtelierScreen layout={PLACEHOLDER_ATELIER} startSeated={returning} onStartColoring={startColoring} />
+    <AtelierScreen layout={PLACEHOLDER_ATELIER} startSeated={returning} onStartColoring={() => startColoring()} />
   ) : (
     <Atelier3DScreen startSeated={returning} onStartColoring={startColoring} />
   );
