@@ -18,8 +18,6 @@ export interface EditorPainting {
   regions: RegionInfo[];
   assignment: Assignment[];
   palette: PaletteEntry[];
-  /** 선의 색. 주지 않으면 갈색 기본값을 쓴다. */
-  lineColor?: readonly [number, number, number];
 }
 
 export function hexToRgb(hex: string): [number, number, number] {
@@ -47,7 +45,6 @@ function toDataUrl(rgba: Uint8ClampedArray<ArrayBuffer>, width: number, height: 
 /** 게임이 읽는 그림 패키지 파일들을 만든다 (PNG 는 data URL, meta.json 은 문자열). */
 export function buildPackage(p: EditorPainting): Record<string, string> {
   const { width, height, darkness, seg, assignment } = p;
-  const lineColor = p.lineColor ?? LINE_COLOR;
   const count = width * height;
 
   // 칠하는 칸만 1 부터 다시 번호를 매긴다. 칠하지 않는 칸은 0 이 된다.
@@ -72,13 +69,13 @@ export function buildPackage(p: EditorPainting): Record<string, string> {
     regionsPng[o + 3] = 255;
 
     const a = darkness[i] / 255;
-    linesPng[o] = lineColor[0];
-    linesPng[o + 1] = lineColor[1];
-    linesPng[o + 2] = lineColor[2];
+    linesPng[o] = LINE_COLOR[0];
+    linesPng[o + 1] = LINE_COLOR[1];
+    linesPng[o + 2] = LINE_COLOR[2];
     linesPng[o + 3] = darkness[i];
 
     const fill = (id && colorOf.get(assignment[seg.ids[i] - 1])) || [255, 253, 248];
-    for (let c = 0; c < 3; c++) referencePng[o + c] = fill[c] * (1 - a) + lineColor[c] * a;
+    for (let c = 0; c < 3; c++) referencePng[o + c] = fill[c] * (1 - a) + LINE_COLOR[c] * a;
     referencePng[o + 3] = 255;
   }
 
