@@ -30,6 +30,7 @@ export class Character3D {
   private readonly book = new THREE.Group();
   private readonly disposables: { dispose(): void }[] = [];
   private pose: Pose3D = 'idle';
+  private wasAirborne = false;
   private time = 0;
 
   constructor() {
@@ -204,8 +205,14 @@ export class Character3D {
   /** 앉았을 때 엉덩이가 놓이는 높이만큼 group 을 내려야 하는 값 */
   static readonly hipHeight = HIP * SCALE;
 
-  update(dt: number): void {
+  /**
+   * @param airborne 점프해서 공중에 떠 있는가
+   */
+  update(dt: number, airborne = false): void {
     this.time += dt;
+    // 땅에 내려서면 공중에서 벌렸던 팔다리를 원래 자세로 되돌린다.
+    if (this.wasAirborne && !airborne) this.setPose(this.pose);
+    this.wasAirborne = airborne;
     const t = this.time;
     if (this.pose === 'walk') {
       const swing = Math.sin(t * 10);
@@ -244,6 +251,15 @@ export class Character3D {
       this.upper.position.y = Math.sin(t * 2.2) * 0.008;
       this.head.rotation.z = Math.sin(t * 0.7) * 0.05;
       this.ears.forEach((ear, k) => (ear.rotation.x = Math.sin(t * 1.3 + k) * 0.05));
+    }
+    if (airborne) {
+      // 공중에서는 두 팔을 번쩍 들고 다리를 벌리며, 귀가 뒤로 젖혀진다
+      this.legs[0].rotation.x = 0.55;
+      this.legs[1].rotation.x = -0.4;
+      this.arms.forEach((arm) => (arm.rotation.x = -2.5));
+      this.ears.forEach((ear) => (ear.rotation.x = -0.4));
+      this.upper.position.y = 0;
+      this.upper.rotation.z = 0;
     }
     // 몇 초마다 눈을 깜빡인다
     const blinking = t % 3.6 < 0.13;

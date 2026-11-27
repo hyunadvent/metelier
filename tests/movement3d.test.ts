@@ -1,5 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { approachCamera, clampDestination, distanceInsideBox, pushOutOfObstacles, shortestTurn, stepToward, type WalkArea } from '../src/atelier3d/movement';
+import {
+  approachCamera,
+  clampDestination,
+  distanceInsideBox,
+  JUMP_GRAVITY,
+  JUMP_SPEED,
+  pushOutOfObstacles,
+  shortestTurn,
+  stepJump,
+  stepToward,
+  type WalkArea,
+} from '../src/atelier3d/movement';
 
 const AREA: WalkArea = {
   bounds: { minX: -4, maxX: 4, minZ: -3, maxZ: 3 },
@@ -93,5 +104,27 @@ describe('카메라 시점 옮기기', () => {
   it('amount 가 0 이면 움직이지 않는다', () => {
     const pose = { azimuth: 1, polar: 1.2, distance: 4 };
     expect(approachCamera(pose, { azimuth: 2, polar: 1, distance: 3 }, 0).pose).toEqual(pose);
+  });
+});
+
+describe('점프', () => {
+  it('뛰어올랐다가 바닥으로 돌아온다', () => {
+    let jump = { height: 0, velocity: JUMP_SPEED };
+    let peak = 0;
+    let time = 0;
+    for (let k = 0; k < 400; k++) {
+      jump = stepJump(jump, 1 / 120);
+      time += 1 / 120;
+      peak = Math.max(peak, jump.height);
+      if (jump.height === 0) break;
+    }
+    expect(jump).toEqual({ height: 0, velocity: 0 });
+    // 가장 높이 뜬 높이는 v² / 2g, 떠 있는 시간은 2v / g 에 가깝다
+    expect(peak).toBeCloseTo(JUMP_SPEED ** 2 / (2 * JUMP_GRAVITY), 1);
+    expect(time).toBeCloseTo((2 * JUMP_SPEED) / JUMP_GRAVITY, 1);
+  });
+
+  it('바닥에 서 있으면 그대로 있다', () => {
+    expect(stepJump({ height: 0, velocity: 0 }, 0.016)).toEqual({ height: 0, velocity: 0 });
   });
 });

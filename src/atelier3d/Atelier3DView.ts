@@ -2,7 +2,17 @@ import * as THREE from 'three';
 import type { OutlineEffect } from 'three/addons/effects/OutlineEffect.js';
 import { Character3D, type Pose3D } from './Character3D';
 import { loadDecor, type PlantKind, type PlantSlot } from './decor';
-import { approachCamera, clampDestination, distanceInsideBox, stepToward, type CameraPose, type Ground } from './movement';
+import {
+  approachCamera,
+  clampDestination,
+  distanceInsideBox,
+  JUMP_SPEED,
+  stepJump,
+  stepToward,
+  type CameraPose,
+  type Ground,
+  type Jump,
+} from './movement';
 import { buildAtelierRoom, configureRenderer, createOutline, type Activity, type AtelierRoom, type Hotspot3D, type Hotspot3DId } from './room';
 
 /** 걷는 속도 (미터 / 초) */
@@ -49,7 +59,7 @@ export interface Atelier3DEvents {
 
 /**
  * 3D 화실 화면: 캐릭터를 뒤에서 따라가는 3인칭 시점.
- * - 바닥을 누르거나 WASD/방향키로 걷는다.
+ * - 바닥을 누르거나 WASD/방향키로 걷고, 스페이스로 점프한다.
  * - 화면을 끌면 360도로 둘러보고, 휠로 가까이/멀리 본다. 카메라는 방 밖으로 나가지 않는다.
  * - 의자를 누르면 앉고, 앉아서 이젤을 누르면 색칠을 시작한다.
  * - 창가를 누르면 방석에 앉아 차를 마시고, 책장을 누르면 책을 골라 방석에 앉아 읽는다.
@@ -74,6 +84,7 @@ export class Atelier3DView {
   /** 잠시 멈춰 있다가 이어서 할 일 (책장 앞에서 책 고르기) */
   private wait: { left: number; then: () => void } | null = null;
   /** 카메라가 스스로 옮겨 가는 목표. 사용자가 화면을 끌거나 휠을 굴리면 그만둔다. */
+  private jump: Jump = { height: 0, velocity: 0 };
   private cameraGoal: CameraPose | null = null;
   /** 활동을 시작하기 전의 카메라. 일어나면 여기로 돌아간다. */
   private cameraBefore: CameraPose | null = null;
@@ -306,6 +317,14 @@ export class Atelier3DView {
 
   private onKeyDown = (e: KeyboardEvent): void => {
     if (e.ctrlKey || e.metaKey || e.altKey) return;
+    if (e.code === 'Space') {
+      // 스페이스: 점프. 앉아 있거나 책을 고르는 중이거나 이미 떠 있으면 뛰지 않는다.
+      e.preventDefault();
+      if (!e.repeat && !this.activity && !this.wait && this.jump.height === 0) {
+        this.jump = { height: 0, velocity: JUMP_SPEED };
+      }
+      return;
+    }
     this.keys.add(e.key.toLowerCase());
   };
 
@@ -411,14 +430,16 @@ export class Atelier3DView {
       this.character.setPoseIfChanged('idle');
     }
 
-    this.character.update(dt);
+    if (this.jump.velocity !== 0 || this.jump.height > 0) this.jump = stepJump(this.jump, dt);
+    if (this.activity) this.jump = { height: 0, velocity: 0 };
+    this.character.update(dt, this.jump.height > 0);
     this.room.update(dt);
     const g = this.character.group;
     if (this.activity) {
       const seat = this.room.seats[this.activity].seat;
       g.position.set(seat.x, seat.y - Character3D.hipHeight, seat.z);
     } else {
-      g.position.set(this.position.x, 0, this.position.z);
+      g.position.set(this.position.x, this.jump.height, this.position.z);
     }
     // 가까운 쪽으로 부드럽게 돌아선다.
     const turn = Math.atan2(Math.sin(this.heading - g.rotation.y), Math.cos(this.heading - g.rotation.y));

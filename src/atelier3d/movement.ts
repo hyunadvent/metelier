@@ -113,3 +113,22 @@ export function approachCamera(current: CameraPose, goal: CameraPose, amount: nu
     Math.abs(pose.distance - goal.distance) < 0.005;
   return { pose: arrived ? { ...goal, azimuth: pose.azimuth + shortestTurn(pose.azimuth, goal.azimuth) } : pose, arrived };
 }
+
+/** 점프 중인 높이와 위로 오르는 빠르기 */
+export interface Jump {
+  /** 바닥에서 뜬 높이 (미터) */
+  height: number;
+  /** 위쪽 속도 (미터 / 초). 내려올 때는 음수 */
+  velocity: number;
+}
+
+/** 뛰어오르는 순간의 속도와 중력. 약 0.7m 높이로 0.7초쯤 뜬다. */
+export const JUMP_SPEED = 4.1;
+export const JUMP_GRAVITY = 12;
+
+/** 점프를 dt 초만큼 진행한다. 바닥에 닿으면 멈춘다. */
+export function stepJump(jump: Jump, dt: number): Jump {
+  const height = jump.height + jump.velocity * dt;
+  if (height <= 0) return { height: 0, velocity: 0 };
+  return { height, velocity: jump.velocity - JUMP_GRAVITY * dt };
+}
