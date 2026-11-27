@@ -2,7 +2,7 @@
 // 모든 계산은 브라우저 안에서 하며, 사진을 어디에도 보내지 않는다.
 import type { PaletteEntry } from '../coloring/painting';
 import { describeRegions, type RegionInfo, type Segmentation } from '../editor/segment';
-import { closeHoles, erode, featureLines, fillHolesWithSkin, flattenSkin, luminance, skinMask, upscaleMap } from './faceLines';
+import { closeHoles, dilate, erode, featureLines, fillHolesWithSkin, flattenSkin, luminance, skinMask, upscaleMap } from './faceLines';
 import { absorb, bilateral, components, modeFilter, quantize, toLab, upscaleLabels } from './imageOps';
 
 export interface PhotoOptions {
@@ -118,6 +118,23 @@ export async function photoToPainting(
     smoothed = bilateral(smoothed, width, height, 4, 3, 28);
   }
 
+  // 1-1. 얼굴은 다듬지 않는다: 살색인 곳(과 그 안의 눈·입)은 원본 그대로 되돌린다.
+  // 다듬으면 작은 얼굴의 눈·코·입이 살색에 섞여 사라지기 때문이다.
+  // 살색인 곳은 다듬은 사진에서 찾는다 (원본은 픽셀마다 색이 흔들려 구멍이 많이 난다).
+  const reach = Math.max(4, Math.round(Math.max(width, height) / 130));
+  const skin = options.faceLines ? skinMask(smoothed) : null;
+  const closed = skin ? closeHoles(skin, width, height, reach) : null;
+  if (closed && smoothed !== rgba) {
+    const keep = dilate(closed, width, height, 2);
+    for (let i = 0; i < keep.length; i++) {
+      if (!keep[i]) continue;
+      const o = i * 4;
+      smoothed[o] = rgba[o];
+      smoothed[o + 1] = rgba[o + 1];
+      smoothed[o + 2] = rgba[o + 2];
+    }
+  }
+
   // 2. 색 묶기: 비슷한 색을 물감 수만큼의 묶음으로 나눈다
   await onStage?.('colors');
   const lab = toLab(smoothed);
@@ -150,11 +167,7 @@ export async function photoToPainting(
   // 2-1. 얼굴: 눈·코·입을 칸이 아니라 선으로 남긴다
   // 선을 그려도 되는 곳(작업 크기)과, 얼굴의 크기를 짐작한 값
   let face: { inside: Uint8Array; size: number } | null = null;
-  if (options.faceLines) {
-    // 얼굴 안의 무늬 크기에 맞춘 값. 사진의 긴 변에 비례한다.
-    const reach = Math.max(4, Math.round(Math.max(width, height) / 130));
-    const skin = skinMask(smoothed);
-    const closed = closeHoles(skin, width, height, reach);
+  if (skin && closed) {
     // 살색 안에 뚫린 작은 구멍(눈, 입, 콧구멍)을 얼굴과 같은 색 묶음으로 메운다
     fillHolesWithSkin(labels, skin, closed, width, height);
     // 얼굴과 팔을 한 가지 살색 면으로 만든다 (명암으로 쪼개진 칸을 없앤다)

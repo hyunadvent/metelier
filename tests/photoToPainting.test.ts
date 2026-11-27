@@ -242,6 +242,32 @@ describe('얼굴의 눈·코·입을 선으로 남기기', () => {
     expect(painting.regions.length).toBeLessThanOrEqual(4);
   });
 
+  it('만화풍으로 다듬을 때 얼굴은 원본 그대로 둔다', async () => {
+    // 사진처럼 픽셀마다 색이 조금씩 흔들리게 한다
+    const photo = facePhoto();
+    const random = seededRandom(9);
+    for (let i = 0; i < photo.length; i += 4) {
+      for (let c = 0; c < 3; c++) photo[i + c] = photo[i + c] + (random() - 0.5) * 24;
+    }
+    const options = { colors: 4, maxRegions: 50, outputSize: 400, workSize: 200, smoothing: 2, faceLines: true };
+    const kept = (await photoToPainting(photo, FW, FH, options)).smoothed.rgba;
+    const blurred = (await photoToPainting(photo, FW, FH, { ...options, faceLines: false })).smoothed.rgba;
+    const same = (data: Uint8ClampedArray, x: number, y: number) => {
+      const o = (y * FW + x) * 4;
+      return data[o] === photo[o] && data[o + 1] === photo[o + 1] && data[o + 2] === photo[o + 2];
+    };
+    // 얼굴 안(볼, 눈, 입)은 원본과 픽셀 값이 같다
+    for (const [x, y] of [[70, 85], [52, 69], [70, 101], [60, 60], [90, 95]]) expect(same(kept, x, y)).toBe(true);
+    // 벽과 파란 원은 다듬어져 원본과 다르다
+    let changedWall = 0;
+    for (let x = 5; x < 25; x++) if (!same(kept, x, 10)) changedWall++;
+    expect(changedWall).toBeGreaterThan(15);
+    // 얼굴을 지키는 옵션을 끄면 얼굴도 다듬어진다
+    let changedFace = 0;
+    for (let x = 60; x < 80; x++) if (!same(blurred, x, 85)) changedFace++;
+    expect(changedFace).toBeGreaterThan(15);
+  });
+
   it('옵션을 끄면 눈과 입 자리에 선을 따로 그리지 않는다', async () => {
     const options = { colors: 4, maxRegions: 50, outputSize: 400, workSize: 200, smoothing: 1, faceLines: false };
     const off = await photoToPainting(facePhoto(), FW, FH, options);
