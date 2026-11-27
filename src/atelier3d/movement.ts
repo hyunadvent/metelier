@@ -82,3 +82,34 @@ export function stepToward(from: Ground, to: Ground, distance: number, area: Wal
   const next = { x: from.x + (dx / remaining) * distance, z: from.z + (dz / remaining) * distance };
   return { position: pushOutOfObstacles(next, area), arrived: false };
 }
+
+/** 카메라가 캐릭터를 바라보는 방식: 좌우 방향, 위아래 각도, 거리 */
+export interface CameraPose {
+  azimuth: number;
+  polar: number;
+  distance: number;
+}
+
+/** 각도 차이를 -π ~ π 로 고친다 (가까운 쪽으로 돌기 위해). */
+export function shortestTurn(from: number, to: number): number {
+  return Math.atan2(Math.sin(to - from), Math.cos(to - from));
+}
+
+/**
+ * 카메라를 목표 쪽으로 조금 옮긴다. 좌우 방향은 가까운 쪽으로 돈다.
+ * @param amount 0 이면 그대로, 1 이면 목표와 같아진다
+ * @returns 새 카메라와, 목표에 다 왔는지
+ */
+export function approachCamera(current: CameraPose, goal: CameraPose, amount: number): { pose: CameraPose; arrived: boolean } {
+  const turn = shortestTurn(current.azimuth, goal.azimuth);
+  const pose = {
+    azimuth: current.azimuth + turn * amount,
+    polar: current.polar + (goal.polar - current.polar) * amount,
+    distance: current.distance + (goal.distance - current.distance) * amount,
+  };
+  const arrived =
+    Math.abs(shortestTurn(pose.azimuth, goal.azimuth)) < 0.002 &&
+    Math.abs(pose.polar - goal.polar) < 0.002 &&
+    Math.abs(pose.distance - goal.distance) < 0.005;
+  return { pose: arrived ? { ...goal, azimuth: pose.azimuth + shortestTurn(pose.azimuth, goal.azimuth) } : pose, arrived };
+}

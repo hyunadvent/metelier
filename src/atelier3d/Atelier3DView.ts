@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import type { OutlineEffect } from 'three/addons/effects/OutlineEffect.js';
 import { Character3D, type Pose3D } from './Character3D';
 import { loadDecor } from './decor';
-import { clampDestination, distanceInsideBox, stepToward, type Ground } from './movement';
+import { approachCamera, clampDestination, distanceInsideBox, stepToward, type CameraPose, type Ground } from './movement';
 import { buildAtelierRoom, configureRenderer, createOutline, type Activity, type AtelierRoom, type Hotspot3D, type Hotspot3DId } from './room';
 
 /** 걷는 속도 (미터 / 초) */
@@ -13,6 +13,16 @@ const DRAG_THRESHOLD = 6;
 const BROWSE_TIME = 0.9;
 /** 활동마다 앉은 자세와, 그 자리를 가리키는 표시 */
 const ACTIVITY_POSE: Record<Activity, Pose3D> = { paint: 'sit', tea: 'tea', read: 'read' };
+/**
+ * 활동을 시작하면 카메라가 옮겨 가는 시점. 일어나면 활동 전의 시점으로 돌아간다.
+ * 그림 그리기는 정해 둔 시점이 없어 보던 그대로 둔다.
+ */
+const ACTIVITY_CAMERA: Partial<Record<Activity, CameraPose>> = {
+  // 뒤쪽 위에서 내려다본다: 찻상과 창밖이 캐릭터 너머로 보인다
+  tea: { azimuth: -0.2, polar: 0.97, distance: 2.6 },
+  // 창을 정면으로 두고 가까이 본다: 책 읽는 옆모습과 창, 책장이 함께 보인다
+  read: { azimuth: 0.05, polar: 1.25, distance: 2.7 },
+};
 const ACTIVITY_SPOT: Record<Activity, Hotspot3DId> = { paint: 'stool', tea: 'window', read: 'bookshelf' };
 const CAMERA = {
   minPolar: 0.95,
@@ -57,6 +67,10 @@ export class Atelier3DView {
   private activity: Activity | null = null;
   /** 잠시 멈춰 있다가 이어서 할 일 (책장 앞에서 책 고르기) */
   private wait: { left: number; then: () => void } | null = null;
+  /** 카메라가 스스로 옮겨 가는 목표. 사용자가 화면을 끌거나 휠을 굴리면 그만둔다. */
+  private cameraGoal: CameraPose | null = null;
+  /** 활동을 시작하기 전의 카메라. 일어나면 여기로 돌아간다. */
+  private cameraBefore: CameraPose | null = null;
   private heading = Math.PI;
   private stuckTime = 0;
   private azimuth = 0.22;
@@ -160,6 +174,12 @@ export class Atelier3DView {
     this.activity = activity;
     this.heading = this.room.seats[activity].heading;
     this.character.setPose(ACTIVITY_POSE[activity]);
+    const view = ACTIVITY_CAMERA[activity];
+    if (view) {
+      // 돌아오는 중이었다면 그 목표가 "활동 전의 시점"이다.
+      this.cameraBefore = this.cameraGoal ?? { azimuth: this.azimuth, polar: this.polar, distance: this.distance };
+      this.cameraGoal = view;
+    }
     this.events.onActivityChange(activity);
   }
 
@@ -167,6 +187,10 @@ export class Atelier3DView {
     if (!this.activity) return;
     this.position = { ...this.room.seats[this.activity].approach };
     this.activity = null;
+    if (this.cameraBefore) {
+      this.cameraGoal = this.cameraBefore;
+      this.cameraBefore = null;
+    }
     this.character.setPose('idle');
     this.events.onActivityChange(null);
   }
@@ -241,6 +265,7 @@ export class Atelier3DView {
     d.moved = true;
     d.x = e.clientX;
     d.y = e.clientY;
+    this.cameraGoal = null;
     // 좌우로는 제한 없이 한 바퀴 돌 수 있다.
     this.azimuth -= dx * 0.006;
     this.polar = Math.min(CAMERA.maxPolar, Math.max(CAMERA.minPolar, this.polar - dy * 0.005));
@@ -261,6 +286,7 @@ export class Atelier3DView {
 
   private onWheel = (e: WheelEvent): void => {
     e.preventDefault();
+    this.cameraGoal = null;
     this.distance = Math.min(CAMERA.maxDistance, Math.max(CAMERA.minDistance, this.distance * Math.exp(e.deltaY * 0.001)));
   };
 
@@ -384,6 +410,17 @@ export class Atelier3DView {
     const turn = Math.atan2(Math.sin(this.heading - g.rotation.y), Math.cos(this.heading - g.rotation.y));
     g.rotation.y += turn * Math.min(1, dt * 12);
 
+    if (this.cameraGoal) {
+      const { pose, arrived } = approachCamera(
+        { azimuth: this.azimuth, polar: this.polar, distance: this.distance },
+        this.cameraGoal,
+        1 - Math.exp(-dt * 4.5),
+      );
+      this.azimuth = pose.azimuth;
+      this.polar = pose.polar;
+      this.distance = pose.distance;
+      if (arrived) this.cameraGoal = null;
+    }
     this.placeCamera(Math.min(1, dt * 6));
     this.outline.render(this.scene, this.camera);
     this.placeSpots();

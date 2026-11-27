@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { clampDestination, distanceInsideBox, pushOutOfObstacles, stepToward, type WalkArea } from '../src/atelier3d/movement';
+import { approachCamera, clampDestination, distanceInsideBox, pushOutOfObstacles, shortestTurn, stepToward, type WalkArea } from '../src/atelier3d/movement';
 
 const AREA: WalkArea = {
   bounds: { minX: -4, maxX: 4, minZ: -3, maxZ: 3 },
@@ -65,5 +65,33 @@ describe('카메라를 방 안에 두기', () => {
         expect(p.z).toBeLessThanOrEqual(box.maxZ + 1e-9);
       }
     }
+  });
+});
+
+describe('카메라 시점 옮기기', () => {
+  it('좌우 방향은 가까운 쪽으로 돈다', () => {
+    expect(shortestTurn(0.1, 0.3)).toBeCloseTo(0.2);
+    expect(shortestTurn(6.2, 0.1)).toBeCloseTo(0.1 + (Math.PI * 2 - 6.2));
+    expect(shortestTurn(0.1, 6.2)).toBeCloseTo(-(0.1 + (Math.PI * 2 - 6.2)));
+    // 여러 바퀴 돈 상태에서도 한 바퀴 안쪽으로만 돈다
+    expect(Math.abs(shortestTurn(13, 0.3))).toBeLessThanOrEqual(Math.PI);
+  });
+
+  it('조금씩 다가가 목표 시점에 도착한다', () => {
+    let pose = { azimuth: 7.5, polar: 1.3, distance: 5.3 };
+    const goal = { azimuth: 0.1, polar: 0.97, distance: 2.6 };
+    let arrived = false;
+    for (let k = 0; k < 400 && !arrived; k++) ({ pose, arrived } = approachCamera(pose, goal, 0.07));
+    expect(arrived).toBe(true);
+    expect(pose.polar).toBe(goal.polar);
+    expect(pose.distance).toBe(goal.distance);
+    // 방향은 같은 곳을 보지만, 돌아온 바퀴 수는 그대로다
+    expect(shortestTurn(pose.azimuth, goal.azimuth)).toBeCloseTo(0);
+    expect(Math.abs(pose.azimuth - 7.5)).toBeLessThanOrEqual(Math.PI);
+  });
+
+  it('amount 가 0 이면 움직이지 않는다', () => {
+    const pose = { azimuth: 1, polar: 1.2, distance: 4 };
+    expect(approachCamera(pose, { azimuth: 2, polar: 1, distance: 3 }, 0).pose).toEqual(pose);
   });
 });
