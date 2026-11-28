@@ -40,8 +40,11 @@ export function App() {
   /** 화실에서 뒤로 가기를 눌렀을 때 묻는 창 */
   const [confirmLeave, setConfirmLeave] = useState(false);
   // 뒤로 가기: 화실에서는 정말 나갈지 묻고, 색칠 중에는 무시한다 (실수로 그림을 그리다 나가지 않게)
+  /** 색칠 중에 뒤로 가기를 누른 횟수 (색칠 화면이 두 번째에 화실로 갈지 묻는다) */
+  const [coloringBacks, setColoringBacks] = useState(0);
   const { leave } = useBackGuard(() => {
     if (screen === 'atelier') setConfirmLeave(true);
+    else setColoringBacks((n) => n + 1);
   }, screen === 'coloring');
   const leaveDialog = confirmLeave && screen === 'atelier' && (
     <ConfirmDialog
@@ -75,6 +78,7 @@ export function App() {
           paintingId={paintingId}
           backdrop={launch.atelier === '2d' ? { kind: '2d', layout: PLACEHOLDER_ATELIER } : { kind: '3d' }}
           onSwitchPainting={setPaintingId}
+          backPresses={coloringBacks}
           onExit={() => {
             // 칠한 것은 이미 이 브라우저에 저장했다. 로그인하지 않았으면 로그인을 권한다.
             if (user || loading) backToAtelier();

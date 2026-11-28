@@ -32,9 +32,14 @@ interface ColoringScreenProps {
   onExit?(): void;
   /** 주면 제목을 눌러 다른 그림으로 바꿀 수 있다 (지금 그림을 저장한 뒤 부른다). */
   onSwitchPainting?(paintingId: string): void;
+  /**
+   * 브라우저의 뒤로 가기를 누른 횟수 (누를 때마다 1씩 는다).
+   * 처음 한 번은 실수일 수 있어 넘어가고, 두 번째부터 화실로 갈지 묻는다.
+   */
+  backPresses?: number;
 }
 
-export function ColoringScreen({ paintingId, backdrop, onExit, onSwitchPainting }: ColoringScreenProps) {
+export function ColoringScreen({ paintingId, backdrop, onExit, onSwitchPainting, backPresses = 0 }: ColoringScreenProps) {
   const atelier = backdrop?.kind === '2d' ? backdrop.layout : undefined;
   const use3d = backdrop?.kind === '3d';
   const backdropHostRef = useRef<HTMLDivElement>(null);
@@ -76,6 +81,20 @@ export function ColoringScreen({ paintingId, backdrop, onExit, onSwitchPainting 
       }),
     [],
   );
+  /** 뒤로 가기를 두 번째 눌렀을 때 화실로 갈지 묻는 창 */
+  const [askExit, setAskExit] = useState(false);
+  const firstBack = useRef<number | null>(null);
+  /** 이 화면을 열 때의 횟수: 그 전에 누른 것(화실에서 등)은 세지 않는다 */
+  const backBaseline = useRef(backPresses);
+  useEffect(() => {
+    if (backPresses === backBaseline.current || !onExit) return;
+    if (firstBack.current === null) {
+      // 처음 한 번은 넘어간다
+      firstBack.current = backPresses;
+      return;
+    }
+    setAskExit(true);
+  }, [backPresses, onExit]);
   /** 제목을 눌러 그림을 바꾸는 중이면 사진으로 만든 그림의 목록 */
   const [choices, setChoices] = useState<StoredPaintingSummary[] | null>(null);
   const meta: PaintingMeta | null = painting?.meta ?? null;
@@ -513,6 +532,23 @@ export function ColoringScreen({ paintingId, backdrop, onExit, onSwitchPainting 
             <CompleteDialog artworkUrl={artworkUrl} onClose={closeDialog} onGallery={() => setDialog('gallery')} />
           )}
           {dialog === 'gallery' && <GalleryDialog onClose={closeDialog} />}
+          {askExit && onExit && (
+            <ConfirmDialog
+              title="색칠을 마치고 화실로 갈까요?"
+              text="지금까지 칠한 것은 저장돼요. 화실에서 이젤을 누르면 이어서 칠할 수 있어요."
+              confirmLabel="화실로 나가기"
+              onClose={() => {
+                setAskExit(false);
+                // 다시 처음 한 번은 넘어가도록
+                firstBack.current = null;
+              }}
+              onConfirm={() => {
+                setAskExit(false);
+                firstBack.current = null;
+                void saveNow().then(onExit);
+              }}
+            />
+          )}
           {choices && onSwitchPainting && (
             <PaintingPicker
               builtins={BUILTIN_PAINTINGS}
