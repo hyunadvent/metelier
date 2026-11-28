@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Atelier3DView } from './Atelier3DView';
-import { FRAME_INFO, loadDecor, MAX_WALL_PICTURES, PLANT_INFO, PLANT_KINDS, saveDecor, type PlantKind, type PlantSlot } from './decor';
+import { FRAME_INFO, FRAME_KINDS, loadDecor, MAX_WALL_PICTURES, PLANT_INFO, PLANT_KINDS, saveDecor, type PlantKind, type PlantSlot } from './decor';
 import { WallPicker } from './WallPicker';
 import type { Activity } from './room';
 import { PaintingPicker } from '../photo/PaintingPicker';
@@ -121,6 +121,13 @@ export function Atelier3DScreen({ startSeated, onStartColoring }: Atelier3DScree
     setWallSelected(null);
   };
 
+  /** 고른 벽 그림의 액자 */
+  const selectedFrame = decor.wall.find((p) => p.id === wallSelected)?.frame ?? 'wood';
+
+  const chooseFrame = (frame: (typeof FRAME_KINDS)[number]) => {
+    if (wallSelected) void viewRef.current?.setWallPictureFrame(wallSelected, frame);
+  };
+
   const removeWallPicture = () => {
     if (!wallSelected) return;
     viewRef.current?.removeWallPicture(wallSelected);
@@ -147,7 +154,21 @@ export function Atelier3DScreen({ startSeated, onStartColoring }: Atelier3DScree
       )}
       {wallSelected && (
         <div className="atelier3d__wallbar" role="toolbar" aria-label="벽 그림 옮기기" data-testid="wall-bar">
-          <span className="atelier3d__wallbar-text">그림을 끌어서 옮겨요 · {FRAME_INFO.wood.label}</span>
+          <span className="atelier3d__wallbar-text">끌어서 옮겨요 · {FRAME_INFO[selectedFrame].label}</span>
+          <div className="atelier3d__frames" role="group" aria-label="액자 고르기">
+            {FRAME_KINDS.map((kind) => (
+              <button
+                key={kind}
+                className="atelier3d__frame"
+                style={{ background: FRAME_INFO[kind].swatch }}
+                aria-label={FRAME_INFO[kind].label}
+                aria-pressed={selectedFrame === kind}
+                title={FRAME_INFO[kind].label}
+                data-frame={kind}
+                onClick={() => chooseFrame(kind)}
+              />
+            ))}
+          </div>
           <button className="atelier3d__wallbar-button" data-testid="wall-remove" onClick={removeWallPicture}>
             치우기
           </button>

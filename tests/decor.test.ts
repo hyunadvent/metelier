@@ -4,6 +4,8 @@ import {
   DEFAULT_DECOR,
   findFreeSpot,
   FRAME_BORDER,
+  FRAME_INFO,
+  FRAME_KINDS,
   GALLERY_WALL,
   MAX_WALL_PICTURES,
   normalizeDecor,
@@ -118,5 +120,22 @@ describe('그림 벽', () => {
     expect(apartZ || apartY).toBe(true);
     // 너무 멀리 가지는 않는다
     expect(Math.hypot(spot.z - 2, spot.y - 1.95)).toBeLessThan(1.2);
+  });
+});
+
+describe('액자 고르기', () => {
+  it('고를 수 있는 액자마다 이름과 버튼 색이 있다', () => {
+    expect(FRAME_KINDS[0]).toBe('wood');
+    for (const kind of FRAME_KINDS) {
+      expect(FRAME_INFO[kind].label).toMatch(/액자$/);
+      expect(FRAME_INFO[kind].swatch).toMatch(/^#[0-9a-f]{6}$/i);
+    }
+  });
+
+  it('저장된 액자 종류를 그대로 읽는다', () => {
+    const wall = normalizeDecor({
+      wall: FRAME_KINDS.map((frame, i) => ({ id: 'w' + i, paintingId: 'hill-house', frame, z: 1 + i, y: 2 })),
+    }).wall;
+    expect(wall.map((w) => w.frame)).toEqual([...FRAME_KINDS]);
   });
 });

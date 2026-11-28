@@ -6,6 +6,7 @@ import {
   loadDecor,
   MAX_WALL_PICTURES,
   wallPictureSize,
+  type FrameKind,
   type PlantKind,
   type PlantSlot,
   type WallPicture,
@@ -138,6 +139,8 @@ export class Atelier3DView {
   private destroyed = false;
   /** 옮기는 중인 벽 그림. 이때는 그림 벽 표시를 숨긴다 (그림 위를 가리지 않게) */
   private wallSelection: string | null = null;
+  /** 그림 벽 앞으로 갈 때 캐릭터가 서는 자리의 z. 다른 곳으로 걸어가면 잊는다. */
+  private wallFocusZ: number | null = null;
   private frame = 0;
   private lastTime = performance.now();
   private time = 0;
@@ -227,9 +230,11 @@ export class Atelier3DView {
   focusGalleryWall(): void {
     const spot = this.room.hotspots.find((h) => h.id === 'gallery-wall')!;
     const z = Math.min(this.room.bounds.maxZ - 0.5, Math.max(-0.6, this.activity ? spot.position.z : this.position.z));
-    this.walkTo(clampDestination({ x: this.room.galleryWallX + WALL_STAND, z }, this.room), () => {
+    const stand = clampDestination({ x: this.room.galleryWallX + WALL_STAND, z }, this.room);
+    this.walkTo(stand, () => {
       this.heading = -Math.PI / 2;
     });
+    this.wallFocusZ = stand.z;
     this.cameraGoal = WALL_CAMERA;
   }
 
@@ -255,13 +260,26 @@ export class Atelier3DView {
     const { w, h } = wallPictureSize(image.aspect);
     const rects = this.wall.map((p) => this.room.wallPictureRect(p.id)).filter((r) => r !== null);
     // 눈높이에 건다. 좌우 자리는 화면 가운데가 가리키는 곳
-    const aim = { z: this.wallPointAt(0, 0)?.z ?? this.position.z, y: 1.95 };
+    // 벽 앞으로 가는 중이면 캐릭터가 설 자리의 앞, 아니면 화면 가운데가 가리키는 곳
+    const aim = { z: this.wallFocusZ ?? this.wallPointAt(0, 0)?.z ?? this.position.z, y: 1.95 };
     const spot = findFreeSpot(rects, w, h, aim);
     const picture: WallPicture = { id: newWallId(), paintingId, frame: 'wood', z: spot.z, y: spot.y };
     this.wall = [...this.wall, picture];
     await this.rebuildWall();
     this.events.onWallChange(this.wall);
     return picture.id;
+  }
+
+  /** 벽에 건 그림의 액자를 바꾼다. 자리는 그대로 둔다. */
+  async setWallPictureFrame(id: string, frame: FrameKind): Promise<void> {
+    const current = this.wall.find((p) => p.id === id);
+    if (!current || current.frame === frame) return;
+    // 끌어서 옮긴 직후라면 방에 있는 자리가 가장 새 자리다
+    const rect = this.room.wallPictureRect(id);
+    this.wall = this.wall.map((p) => (p.id === id ? { ...p, frame, ...(rect ? { z: rect.z, y: rect.y } : {}) } : p));
+    this.events.onWallChange(this.wall);
+    await this.rebuildWall();
+    if (this.wallSelection === id) this.room.highlightWallPicture(id);
   }
 
   removeWallPicture(id: string): void {
@@ -323,6 +341,7 @@ export class Atelier3DView {
   // ── 행동 ───────────────────────────────────────
 
   private walkTo(target: Ground, onArrive: (() => void) | null = null): void {
+    this.wallFocusZ = null;
     if (this.activity) this.standUp();
     this.wait = null;
     this.target = target;
@@ -623,6 +642,7 @@ export class Atelier3DView {
       this.target = null;
       this.onArrive = null;
       this.wait = null;
+      this.wallFocusZ = null;
       const step = WALK_SPEED * dt;
       const wanted = { x: this.position.x + keyDir.x * step, z: this.position.z + keyDir.z * step };
       this.position = clampDestination(wanted, this.room);

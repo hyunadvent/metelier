@@ -961,16 +961,24 @@ export function buildAtelierRoom(decor: AtelierDecor = DEFAULT_DECOR): AtelierRo
   group.add(wallGroup);
   /** 벽 그림마다 만든 것들. 그림을 다시 걸 때 정리한다. */
   const wallItems = new Map<string, { group: THREE.Group; w: number; h: number; trash: { dispose(): void }[] }>();
-  const frameMaterials = new Map<FrameKind, THREE.Material>();
-  const frameMaterial = (kind: FrameKind): THREE.Material => {
-    let m = frameMaterials.get(kind);
+  /** 액자 종류마다의 모양: 테두리 재질, 모서리의 둥글기, 그림 둘레의 가는 띠(있으면) */
+  const FRAME_LOOKS: Record<FrameKind, { color: number; roughness: number; metalness?: number; radius: number; bead?: number }> = {
+    // 따뜻한 원목
+    wood: { color: WOOD, roughness: 0.75, radius: 0.02 },
+    // 반듯하고 깔끔한 흰 액자
+    white: { color: 0xf7f4ee, roughness: 0.45, radius: 0.008 },
+    // 그림 둘레에 진한 금색 띠를 두른 금빛 액자
+    gold: { color: 0xe0b44c, roughness: 0.35, metalness: 0.55, radius: 0.012, bead: 0xb8862b },
+    // 모서리가 아주 둥근 분홍 액자
+    pink: { color: 0xf7b6c8, roughness: 0.6, radius: 0.04 },
+  };
+  const frameMaterials = new Map<number, THREE.Material>();
+  const frameMaterial = (color: number, roughness: number, metalness = 0): THREE.Material => {
+    const key = color * 1000 + Math.round(roughness * 100) * 10 + Math.round(metalness * 9);
+    let m = frameMaterials.get(key);
     if (!m) {
-      switch (kind) {
-        case 'wood':
-          m = keep(new THREE.MeshStandardMaterial({ color: WOOD, roughness: 0.75 }));
-          break;
-      }
-      frameMaterials.set(kind, m);
+      m = keep(new THREE.MeshStandardMaterial({ color, roughness, metalness }));
+      frameMaterials.set(key, m);
     }
     return m;
   };
@@ -999,8 +1007,24 @@ export function buildAtelierRoom(decor: AtelierDecor = DEFAULT_DECOR): AtelierRo
       return m;
     };
     // 액자 테두리, 그 안의 흰 여백, 그림
-    part(roundedBox(w + FRAME_BORDER, h + FRAME_BORDER, 0.05, 0.02), frameMaterial(picture.frame), 0.025);
+    const look = FRAME_LOOKS[picture.frame];
+    part(roundedBox(w + FRAME_BORDER, h + FRAME_BORDER, 0.05, look.radius), frameMaterial(look.color, look.roughness, look.metalness), 0.025);
     part(roundedBox(w + 0.04, h + 0.04, 0.052, 0.004), matMaterial, 0.027);
+    if (look.bead !== undefined) {
+      // 테두리 안쪽을 따라 도드라진 띠
+      const bead = frameMaterial(look.bead, 0.3, 0.6);
+      const t = 0.014;
+      const bw = w + 0.04 + t;
+      const bh = h + 0.04 + t;
+      for (const [sw, sh, x, y] of [
+        [bw + t, t, 0, bh / 2],
+        [bw + t, t, 0, -bh / 2],
+        [t, bh + t, bw / 2, 0],
+        [t, bh + t, -bw / 2, 0],
+      ]) {
+        part(roundedBox(sw, sh, 0.062, 0.005), bead, 0.031).position.set(x, y, 0.031);
+      }
+    }
     const canvasMat = new THREE.MeshStandardMaterial({ color: 0xffffff, map: image.texture, roughness: 1 });
     trash.push(canvasMat);
     part(new THREE.PlaneGeometry(w, h), canvasMat, 0.0545, false);
@@ -1135,6 +1159,7 @@ export function buildAtelierRoom(decor: AtelierDecor = DEFAULT_DECOR): AtelierRo
       return object ? (object.userData.wallId as string) : null;
     },
     highlightWallPicture(id: string | null) {
+      if (id !== null && !wallItems.has(id)) return;
       for (const [key, item] of wallItems) item.group.position.x = key === id ? -halfW + 0.04 : -halfW;
       highlighted = id;
     },

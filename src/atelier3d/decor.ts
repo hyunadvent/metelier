@@ -27,12 +27,16 @@ export const PLANT_INFO: Record<PlantKind, { icon: string; label: string }> = {
   cactus: { icon: '🌵', label: '선인장' },
 };
 
-/** 액자의 종류. 지금은 나무 액자 하나이고, 나중에 고를 수 있는 액자가 늘어난다. */
-export const FRAME_KINDS = ['wood'] as const;
+/** 고를 수 있는 액자. 새로 걸면 첫 번째(나무 액자)로 걸린다. */
+export const FRAME_KINDS = ['wood', 'white', 'gold', 'pink'] as const;
 export type FrameKind = (typeof FRAME_KINDS)[number];
 
-export const FRAME_INFO: Record<FrameKind, { label: string }> = {
-  wood: { label: '나무 액자' },
+/** 액자 이름과, 고르는 버튼에 칠할 색 */
+export const FRAME_INFO: Record<FrameKind, { label: string; swatch: string }> = {
+  wood: { label: '나무 액자', swatch: '#d9a56c' },
+  white: { label: '하얀 액자', swatch: '#f7f4ee' },
+  gold: { label: '금빛 액자', swatch: '#e0b44c' },
+  pink: { label: '분홍 액자', swatch: '#f7b6c8' },
 };
 
 /**
