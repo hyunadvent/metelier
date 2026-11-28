@@ -6,6 +6,8 @@ import { useAuth } from '../auth/AuthContext';
 import { SaveLoginPrompt } from '../auth/SaveLoginPrompt';
 import { useSync } from '../sync/SyncContext';
 import { ColoringScreen } from '../coloring/ColoringScreen';
+import { ConfirmDialog } from '../coloring/dialogs';
+import { useBackGuard } from './useBackGuard';
 
 const DEFAULT_PAINTING = 'hill-house';
 
@@ -35,6 +37,24 @@ export function App() {
   // 색칠을 하다가 돌아오면 의자에 앉은 채로 화실이 열린다.
   const [returning, setReturning] = useState(false);
   const [paintingId, setPaintingId] = useState(launch.painting ?? DEFAULT_PAINTING);
+  /** 화실에서 뒤로 가기를 눌렀을 때 묻는 창 */
+  const [confirmLeave, setConfirmLeave] = useState(false);
+  // 뒤로 가기: 화실에서는 정말 나갈지 묻고, 색칠 중에는 무시한다 (실수로 그림을 그리다 나가지 않게)
+  const { leave } = useBackGuard(() => {
+    if (screen === 'atelier') setConfirmLeave(true);
+  });
+  const leaveDialog = confirmLeave && screen === 'atelier' && (
+    <ConfirmDialog
+      title="정말 나가시겠어요?"
+      text="메틀리에를 닫고 이전 페이지로 돌아가요."
+      confirmLabel="나가기"
+      onClose={() => setConfirmLeave(false)}
+      onConfirm={() => {
+        setConfirmLeave(false);
+        leave();
+      }}
+    />
+  );
   const startColoring = (id: string = launch.painting ?? DEFAULT_PAINTING) => {
     setPaintingId(id);
     setScreen('coloring');
@@ -74,9 +94,14 @@ export function App() {
       </>
     );
   }
-  return launch.atelier === '2d' ? (
-    <AtelierScreen layout={PLACEHOLDER_ATELIER} startSeated={returning} onStartColoring={() => startColoring()} />
-  ) : (
-    <Atelier3DScreen startSeated={returning} onStartColoring={startColoring} />
+  return (
+    <>
+      {launch.atelier === '2d' ? (
+        <AtelierScreen layout={PLACEHOLDER_ATELIER} startSeated={returning} onStartColoring={() => startColoring()} />
+      ) : (
+        <Atelier3DScreen startSeated={returning} onStartColoring={startColoring} />
+      )}
+      {leaveDialog}
+    </>
   );
 }
