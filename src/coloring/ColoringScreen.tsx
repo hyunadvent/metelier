@@ -3,10 +3,15 @@ import type { AtelierLayout } from '../atelier/scene';
 import { EaselBackdrop, type ScreenRect } from '../atelier3d/EaselBackdrop';
 import { Brush } from './Brush';
 import { StardustOverlay } from './StardustOverlay';
+import { PaintingPicker } from '../photo/PaintingPicker';
+import { BUILTIN_PAINTINGS } from './builtinPaintings';
+import { loadDecor } from '../atelier3d/decor';
+import { listStoredPaintings, type StoredPaintingSummary } from '../storage/db';
 import { useHintsDone } from '../app/useHintsDone';
 import { brushScale, onPaintBuff, paintBuffLeft } from '../app/paintBuff';
 import { CompleteDialog, ConfirmDialog, GalleryDialog } from './dialogs';
-import { hexToRgb, loadPainting, type LoadedPainting, type PaintingMeta, type Tool } from './painting';
+import { hexToRgb, isCustomTool, loadPainting, type LoadedPainting, type PaintingMeta, type Tool } from './painting';
+import { onRemoteApplied } from '../storage/changes';
 import { restoreSession, saveSession } from './persistence';
 import { loadSettings, saveSettings, type Settings } from './settings';
 import { sound } from './sound';
@@ -25,9 +30,11 @@ interface ColoringScreenProps {
   backdrop?: { kind: '3d' } | { kind: '2d'; layout: AtelierLayout };
   /** 주면 왼쪽 위에 화실로 돌아가는 버튼이 생긴다. */
   onExit?(): void;
+  /** 주면 제목을 눌러 다른 그림으로 바꿀 수 있다 (지금 그림을 저장한 뒤 부른다). */
+  onSwitchPainting?(paintingId: string): void;
 }
 
-export function ColoringScreen({ paintingId, backdrop, onExit }: ColoringScreenProps) {
+export function ColoringScreen({ paintingId, backdrop, onExit, onSwitchPainting }: ColoringScreenProps) {
   const atelier = backdrop?.kind === '2d' ? backdrop.layout : undefined;
   const use3d = backdrop?.kind === '3d';
   const backdropHostRef = useRef<HTMLDivElement>(null);
@@ -57,6 +64,20 @@ export function ColoringScreen({ paintingId, backdrop, onExit }: ColoringScreenP
   const [dialog, setDialog] = useState<DialogKind>(null);
   const [artworkUrl, setArtworkUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** 나만의 물감 (화실 책상의 팔레트에서 만든다) */
+  const [customColors, setCustomColors] = useState(() => loadDecor().colors ?? []);
+  /** 물감 줄 오른쪽의 "내 물감" 이 펼쳐져 있는가 */
+  const [customOpen, setCustomOpen] = useState(false);
+  useEffect(
+    () =>
+      // 다른 기기에서 만든 물감을 받아 오면 바로 보여 준다
+      onRemoteApplied((kinds) => {
+        if (kinds.has('decor')) setCustomColors(loadDecor().colors ?? []);
+      }),
+    [],
+  );
+  /** 제목을 눌러 그림을 바꾸는 중이면 사진으로 만든 그림의 목록 */
+  const [choices, setChoices] = useState<StoredPaintingSummary[] | null>(null);
   const meta: PaintingMeta | null = painting?.meta ?? null;
   /** 붓 다루는 법을 해 봤는가. 로그인하지 않았으면 접속할 때마다 다시 알려 준다. */
   const [hintsDone, markHint] = useHintsDone();
@@ -233,6 +254,8 @@ export function ColoringScreen({ paintingId, backdrop, onExit }: ColoringScreenP
       view.setBrush(null);
     } else if (tool === 'eraser') {
       view.setBrush({ kind: 'erase' });
+    } else if (isCustomTool(tool)) {
+      view.setBrush({ kind: 'paint', color: hexToRgb(tool) });
     } else {
       const entry = meta.palette.find((p) => p.number === tool);
       view.setBrush(entry ? { kind: 'paint', color: hexToRgb(entry.color) } : null);
@@ -340,7 +363,22 @@ export function ColoringScreen({ paintingId, backdrop, onExit }: ColoringScreenP
             <div className="pill" aria-label="칠한 칸 수">
               🎨 {progress.filled} / {progress.total}
             </div>
-            <div className="pill pill--title">{meta.title}</div>
+            {onSwitchPainting ? (
+              <button
+                className="pill pill--title pill--button"
+                aria-label={`${meta.title} · 다른 그림 고르기`}
+                title="눌러서 다른 그림 고르기"
+                onClick={() => {
+                  void listStoredPaintings()
+                    .catch(() => [])
+                    .then(setChoices);
+                }}
+              >
+                {meta.title} <span aria-hidden="true">▾</span>
+              </button>
+            ) : (
+              <div className="pill pill--title">{meta.title}</div>
+            )}
             <span className="coloring__spacer" />
             {/* 휴대폰 세로 화면에서 되돌리기·확대를 아랫줄로 내리는 줄바꿈 */}
             <span className="coloring__break" />
@@ -422,7 +460,41 @@ export function ColoringScreen({ paintingId, backdrop, onExit }: ColoringScreenP
             >
               🧽
             </div>
+            {/* 나만의 물감: 화실 책상의 팔레트에서 만든 색 */}
+            <button
+              className={`pot pot--custom${isCustomTool(tool) ? ' pot--selected' : ''}`}
+              style={isCustomTool(tool) ? { background: tool } : undefined}
+              aria-label="내 물감"
+              aria-expanded={customOpen}
+              title="내 물감"
+              data-testid="custom-colors-button"
+              onClick={() => setCustomOpen((v) => !v)}
+            >
+              {!isCustomTool(tool) && <span aria-hidden="true">🎨</span>}
+            </button>
           </footer>
+
+          {customOpen && (
+            <div className="custom-colors" role="group" aria-label="내 물감" data-testid="custom-colors">
+              <p className="custom-colors__title">내 물감</p>
+              {customColors.length === 0 ? (
+                <p className="custom-colors__empty">화실 책상 위의 팔레트를 눌러 나만의 물감을 만들어 보세요</p>
+              ) : (
+                <div className="custom-colors__pots">
+                  {customColors.map((c) => (
+                    <div
+                      key={c}
+                      className={`pot pot--small pot--tappable${tool === c ? ' pot--selected' : ''}`}
+                      style={{ background: c }}
+                      data-pot={c}
+                      aria-label={`내 물감 ${c}`}
+                      onClick={() => pickTool(c as Tool)}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           <Brush view={view} palette={meta.palette} tool={tool} onDip={pickTool} onEmptyStroke={shakePalette} onPaint={onPaint} cue={brushCue} />
 
@@ -430,6 +502,21 @@ export function ColoringScreen({ paintingId, backdrop, onExit }: ColoringScreenP
             <CompleteDialog artworkUrl={artworkUrl} onClose={closeDialog} onGallery={() => setDialog('gallery')} />
           )}
           {dialog === 'gallery' && <GalleryDialog onClose={closeDialog} />}
+          {choices && onSwitchPainting && (
+            <PaintingPicker
+              builtins={BUILTIN_PAINTINGS}
+              hung={new Set(loadDecor().wall.map((p) => p.paintingId).filter((id) => id !== paintingId))}
+              photos={choices}
+              onPick={(id) => {
+                setChoices(null);
+                if (id === paintingId) return;
+                // 지금 그림을 저장한 뒤 바꾼다
+                void saveNow().then(() => onSwitchPainting(id));
+              }}
+              onClose={() => setChoices(null)}
+              onChange={setChoices}
+            />
+          )}
           {dialog === 'reset' && (
             <ConfirmDialog
               title="처음부터 다시 칠할까요?"

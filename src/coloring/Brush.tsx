@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react';
-import type { PaletteEntry, Tool } from './painting';
+import { isCustomTool, type PaletteEntry, type Tool } from './painting';
 import type { ColoringView } from './view/ColoringView';
 
 /** 붓이 기울어진 각도. 붓끝이 왼쪽 아래, 손잡이가 오른쪽 위를 향한다. */
@@ -162,7 +162,7 @@ export function Brush({ view, palette, tool, onDip, onEmptyStroke, onPaint, cue 
       const r = el.getBoundingClientRect();
       const id = el.dataset.pot!;
       return {
-        tool: id === 'eraser' ? 'eraser' : Number(id),
+        tool: (id === 'eraser' ? 'eraser' : id.startsWith('#') ? id : Number(id)) as Tool,
         x: r.left + r.width / 2,
         y: r.top + r.height / 2,
         r: r.width / 2,
@@ -258,7 +258,9 @@ export function Brush({ view, palette, tool, onDip, onEmptyStroke, onPaint, cue 
   const bristle =
     tool === null || tool === 'eraser'
       ? CLEAN_BRISTLE
-      : (palette.find((p) => p.number === tool)?.color ?? CLEAN_BRISTLE);
+      : isCustomTool(tool)
+        ? tool
+        : (palette.find((p) => p.number === tool)?.color ?? CLEAN_BRISTLE);
 
   const handlers = (mode: 'move' | 'paint') => ({
     onPointerDown: onPointerDown(mode),

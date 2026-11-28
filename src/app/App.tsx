@@ -54,6 +54,7 @@ export function App() {
         <ColoringScreen
           paintingId={paintingId}
           backdrop={launch.atelier === '2d' ? { kind: '2d', layout: PLACEHOLDER_ATELIER } : { kind: '3d' }}
+          onSwitchPainting={setPaintingId}
           onExit={() => {
             // 칠한 것은 이미 이 브라우저에 저장했다. 로그인하지 않았으면 로그인을 권한다.
             if (user || loading) backToAtelier();

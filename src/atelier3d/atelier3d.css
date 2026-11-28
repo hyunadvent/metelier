@@ -400,3 +400,104 @@
     display: none;
   }
 }
+
+/* ── 나만의 물감 만들기 (책상 위의 팔레트) ─────────── */
+.atelier3d__palette {
+  width: min(400px, calc(100% - 32px));
+}
+
+.atelier3d__palette-text,
+.atelier3d__palette-label {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.atelier3d__palette-label {
+  font-weight: 700;
+}
+
+.atelier3d__palette-mine,
+.atelier3d__palette-suggest {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-height: 40px;
+  align-items: center;
+}
+
+.atelier3d__palette-empty {
+  font-size: 13px;
+  color: #9a8573;
+}
+
+.atelier3d__palette-swatch {
+  position: relative;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  border-radius: 50%;
+  border: 3px solid rgb(91 70 54 / 22%);
+  cursor: pointer;
+}
+
+.atelier3d__palette-swatch span {
+  position: absolute;
+  right: -6px;
+  top: -6px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #5b4636;
+  color: #fffaf2;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.atelier3d__palette-swatch--suggest {
+  width: 30px;
+  height: 30px;
+}
+
+.atelier3d__palette-swatch:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.atelier3d__palette-add {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.atelier3d__palette-picker {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  flex: none;
+  cursor: pointer;
+}
+
+.atelier3d__palette-picker input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.atelier3d__palette-picker span {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 12px;
+  border: 3px solid #ecd9c2;
+  box-sizing: border-box;
+  pointer-events: none;
+}
+
+.atelier3d__wallbar-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}

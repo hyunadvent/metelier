@@ -31,7 +31,8 @@ export const PLANT_INFO: Record<PlantKind, { icon: string; label: string }> = {
 };
 
 /** 고를 수 있는 액자. 새로 걸면 첫 번째(나무 액자)로 걸린다. */
-export const FRAME_KINDS = ['wood', 'white', 'gold', 'pink'] as const;
+// 뒤의 여섯은 요즘 많이 쓰는 액자: 얇은 무광 검정, 밝은 원목(오크), 짙은 원목(월넛), 띄워 거는 플로팅, 장식 많은 앤티크 금, 물결 모양
+export const FRAME_KINDS = ['wood', 'white', 'gold', 'pink', 'black', 'oak', 'walnut', 'floating', 'ornate', 'wavy'] as const;
 export type FrameKind = (typeof FRAME_KINDS)[number];
 
 /** 액자 이름과, 고르는 버튼에 칠할 색 */
@@ -40,6 +41,12 @@ export const FRAME_INFO: Record<FrameKind, { label: string; swatch: string }> = 
   white: { label: '하얀 액자', swatch: '#f7f4ee' },
   gold: { label: '금빛 액자', swatch: '#e0b44c' },
   pink: { label: '분홍 액자', swatch: '#f7b6c8' },
+  black: { label: '블랙 메탈 액자', swatch: '#2b2b2e' },
+  oak: { label: '오크 원목 액자', swatch: '#e7c79a' },
+  walnut: { label: '월넛 액자', swatch: '#6b4528' },
+  floating: { label: '플로팅 액자', swatch: '#3a3330' },
+  ornate: { label: '앤티크 금 액자', swatch: '#c99a3c' },
+  wavy: { label: '물결 액자', swatch: '#c9b6f2' },
 };
 
 /**
@@ -136,6 +143,26 @@ export interface AtelierDecor {
   plants: Record<PlantSlot, PlantKind>;
   /** 그림 벽에 건 완성작들 */
   wall: WallPicture[];
+  /** 나만의 물감 (화실 책상의 팔레트에서 만든다. 색칠할 때 "내 물감" 에서 고른다). 없으면 비어 있다. */
+  colors?: string[];
+}
+
+/** 나만의 물감은 이만큼까지 */
+export const MAX_CUSTOM_COLORS = 12;
+const HEX_COLOR = /^#[0-9a-f]{6}$/;
+
+/** 저장된 나만의 물감을 읽는다: #rrggbb 만, 겹치지 않게, 정해진 수까지 */
+export function parseCustomColors(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  const out: string[] = [];
+  for (const item of raw) {
+    if (typeof item !== 'string') continue;
+    const hex = item.toLowerCase();
+    if (!HEX_COLOR.test(hex) || out.includes(hex)) continue;
+    out.push(hex);
+    if (out.length >= MAX_CUSTOM_COLORS) break;
+  }
+  return out;
 }
 
 export const DEFAULT_DECOR: AtelierDecor = {
@@ -196,7 +223,7 @@ function parsePicture(raw: unknown): PictureRef | null {
 
 /** 저장된 값을 믿을 수 있는 꾸밈 데이터로 고친다. 빠졌거나 잘못된 자리는 기본값으로 채운다. */
 export function normalizeDecor(raw: unknown): AtelierDecor {
-  const source = typeof raw === 'object' && raw !== null ? (raw as { pictures?: unknown; plants?: unknown; wall?: unknown }) : {};
+  const source = typeof raw === 'object' && raw !== null ? (raw as { pictures?: unknown; plants?: unknown; wall?: unknown; colors?: unknown }) : {};
   const saved = source.pictures ?? {};
   const pictures = { ...DEFAULT_DECOR.pictures };
   const plants = { ...DEFAULT_DECOR.plants };
@@ -212,7 +239,8 @@ export function normalizeDecor(raw: unknown): AtelierDecor {
       if (picture) pictures[slot] = picture;
     }
   }
-  return { version: 1, pictures, plants, wall: parseWall(source.wall) };
+  const colors = parseCustomColors(source.colors);
+  return { version: 1, pictures, plants, wall: parseWall(source.wall), ...(colors.length ? { colors } : {}) };
 }
 
 export function loadDecor(): AtelierDecor {

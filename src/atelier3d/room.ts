@@ -31,7 +31,7 @@ import {
   woodFloorTexture,
 } from './textures';
 
-export type Hotspot3DId = 'easel' | 'stool' | 'window' | 'bookshelf' | 'plant' | 'camera' | 'gallery-wall';
+export type Hotspot3DId = 'easel' | 'stool' | 'window' | 'bookshelf' | 'plant' | 'camera' | 'gallery-wall' | 'palette';
 
 /** 그림 벽에 걸 그림 한 점: 자리와 액자, 그리고 불러온 그림 */
 export interface WallPictureView {
@@ -982,7 +982,15 @@ export function buildAtelierRoom(decor: AtelierDecor = DEFAULT_DECOR): AtelierRo
   /** 벽 그림마다 만든 것들. 그림을 다시 걸 때 정리한다. */
   const wallItems = new Map<string, { group: THREE.Group; w: number; h: number; trash: { dispose(): void }[] }>();
   /** 액자 종류마다의 모양: 테두리 재질, 모서리의 둥글기, 그림 둘레의 가는 띠(있으면) */
-  const FRAME_LOOKS: Record<FrameKind, { color: number; roughness: number; metalness?: number; radius: number; bead?: number }> = {
+  /**
+   * 액자 모양.
+   * border: 테두리 폭(양쪽 합, 없으면 기본), bead: 안쪽 띠, outerBead: 바깥 띠,
+   * float: 그림이 액자 안에 떠 있는 것처럼 둘레에 어두운 틈을 둔다, wavy: 바깥 둘레가 물결 모양
+   */
+  const FRAME_LOOKS: Record<
+    FrameKind,
+    { color: number; roughness: number; metalness?: number; radius: number; bead?: number; outerBead?: number; border?: number; float?: boolean; wavy?: boolean }
+  > = {
     // 따뜻한 원목
     wood: { color: WOOD, roughness: 0.75, radius: 0.02 },
     // 반듯하고 깔끔한 흰 액자
@@ -991,7 +999,54 @@ export function buildAtelierRoom(decor: AtelierDecor = DEFAULT_DECOR): AtelierRo
     gold: { color: 0xe0b44c, roughness: 0.35, metalness: 0.55, radius: 0.012, bead: 0xb8862b },
     // 모서리가 아주 둥근 분홍 액자
     pink: { color: 0xf7b6c8, roughness: 0.6, radius: 0.04 },
+    // 아주 얇은 무광 검정 금속
+    black: { color: 0x2b2b2e, roughness: 0.55, metalness: 0.4, radius: 0.003, border: 0.05 },
+    // 폭이 넓은 밝은 원목
+    oak: { color: 0xe7c79a, roughness: 0.8, radius: 0.012, border: 0.2 },
+    // 짙은 호두나무
+    walnut: { color: 0x6b4528, roughness: 0.6, radius: 0.01, border: 0.11 },
+    // 얇은 테두리 안에 그림이 떠 있는 플로팅 액자
+    floating: { color: 0x3a3330, roughness: 0.5, radius: 0.004, border: 0.12, float: true },
+    // 넓은 금빛 테두리에 안팎으로 띠를 두른 앤티크 액자
+    ornate: { color: 0xd4a548, roughness: 0.3, metalness: 0.65, radius: 0.02, border: 0.22, bead: 0x9c6f22, outerBead: 0xb8862b },
+    // 둘레가 물결치는 파스텔 액자
+    wavy: { color: 0xc9b6f2, roughness: 0.55, radius: 0, border: 0.16, wavy: true },
   };
+  /** 바깥 둘레가 물결치는 액자 테두리 (가운데에 그림 자리 구멍) */
+  const wavyFrame = (outerW: number, outerH: number, holeW: number, holeH: number, depth: number) => {
+    const shape = new THREE.Shape();
+    const amp = 0.022;
+    const bump = 0.075;
+    const pts: THREE.Vector2[] = [];
+    const edge = (x0: number, y0: number, x1: number, y1: number, nx: number, ny: number) => {
+      const len = Math.hypot(x1 - x0, y1 - y0);
+      const n = Math.max(2, Math.round(len / bump));
+      const steps = n * 8;
+      for (let i = 0; i < steps; i++) {
+        const t = i / steps;
+        const wave = (Math.sin(t * n * Math.PI * 2 - Math.PI / 2) + 1) / 2;
+        pts.push(new THREE.Vector2(x0 + (x1 - x0) * t + nx * amp * wave, y0 + (y1 - y0) * t + ny * amp * wave));
+      }
+    };
+    const hw = outerW / 2 - 0.022;
+    const hh = outerH / 2 - 0.022;
+    edge(-hw, -hh, hw, -hh, 0, -1);
+    edge(hw, -hh, hw, hh, 1, 0);
+    edge(hw, hh, -hw, hh, 0, 1);
+    edge(-hw, hh, -hw, -hh, -1, 0);
+    shape.setFromPoints(pts);
+    const hole = new THREE.Path();
+    hole.moveTo(-holeW / 2, -holeH / 2);
+    hole.lineTo(-holeW / 2, holeH / 2);
+    hole.lineTo(holeW / 2, holeH / 2);
+    hole.lineTo(holeW / 2, -holeH / 2);
+    hole.closePath();
+    shape.holes.push(hole);
+    const geometry = new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: true, bevelSize: 0.006, bevelThickness: 0.006, bevelSegments: 2 });
+    geometry.translate(0, 0, -depth / 2);
+    return geometry;
+  };
+  const floatGapMaterial = mat(0x2a2422);
   const frameMaterials = new Map<number, THREE.Material>();
   const frameMaterial = (color: number, roughness: number, metalness = 0): THREE.Material => {
     const key = color * 1000 + Math.round(roughness * 100) * 10 + Math.round(metalness * 9);
@@ -1027,9 +1082,28 @@ export function buildAtelierRoom(decor: AtelierDecor = DEFAULT_DECOR): AtelierRo
       return m;
     };
     // 액자 테두리, 그 안의 흰 여백, 그림
-    const look = FRAME_LOOKS[picture.frame];
-    part(roundedBox(w + FRAME_BORDER, h + FRAME_BORDER, 0.05, look.radius), frameMaterial(look.color, look.roughness, look.metalness), 0.025);
-    part(roundedBox(w + 0.04, h + 0.04, 0.052, 0.004), matMaterial, 0.027);
+    const look = FRAME_LOOKS[picture.frame] ?? FRAME_LOOKS.wood;
+    const border = look.border ?? FRAME_BORDER;
+    const frameMat = frameMaterial(look.color, look.roughness, look.metalness);
+    if (look.wavy) part(wavyFrame(w + border, h + border, w + 0.02, h + 0.02, 0.05), frameMat, 0.025);
+    else part(roundedBox(w + border, h + border, 0.05, look.radius), frameMat, 0.025);
+    // 그림 둘레의 흰 여백. 플로팅 액자는 그림이 떠 보이도록 어두운 틈
+    part(roundedBox(w + 0.04, h + 0.04, 0.052, 0.004), look.float ? floatGapMaterial : matMaterial, look.float ? 0.022 : 0.027);
+    if (look.outerBead !== undefined) {
+      // 바깥 둘레를 따라 도드라진 띠
+      const ob = frameMaterial(look.outerBead, 0.3, 0.6);
+      const t = 0.018;
+      const ow = w + border - t;
+      const oh = h + border - t;
+      for (const [sw, sh, x, y] of [
+        [ow + t, t, 0, oh / 2],
+        [ow + t, t, 0, -oh / 2],
+        [t, oh + t, ow / 2, 0],
+        [t, oh + t, -ow / 2, 0],
+      ]) {
+        part(roundedBox(sw, sh, 0.064, 0.006), ob, 0.032).position.set(x, y, 0.032);
+      }
+    }
     if (look.bead !== undefined) {
       // 테두리 안쪽을 따라 도드라진 띠
       const bead = frameMaterial(look.bead, 0.3, 0.6);
@@ -1049,7 +1123,7 @@ export function buildAtelierRoom(decor: AtelierDecor = DEFAULT_DECOR): AtelierRo
     trash.push(canvasMat);
     part(new THREE.PlaneGeometry(w, h), canvasMat, 0.0545, false);
     // 벽에 닿는 그림자
-    const shadowPlane = new THREE.Mesh(new THREE.PlaneGeometry(w + FRAME_BORDER + 0.1, h + FRAME_BORDER + 0.1), shadeMat);
+    const shadowPlane = new THREE.Mesh(new THREE.PlaneGeometry(w + border + 0.1, h + border + 0.1), shadeMat);
     trash.push(shadowPlane.geometry);
     shadowPlane.position.set(0, -0.03, 0.003);
     shadowPlane.renderOrder = 1;
@@ -1149,6 +1223,8 @@ export function buildAtelierRoom(decor: AtelierDecor = DEFAULT_DECOR): AtelierRo
       { id: 'plant', label: '화분 바꾸기', icon: '🌱', position: new THREE.Vector3(0.5, 1.9, back + 0.42), available: true },
       { id: 'bookshelf', label: '책 읽기', icon: '📖', position: new THREE.Vector3(halfW - 0.55, 1.75, -1.65), available: true },
       { id: 'gallery-wall', label: '완성한 그림 걸기', icon: '🖼️', position: new THREE.Vector3(-halfW + 0.2, 2.55, 2.7), available: true },
+      // 책상 위의 팔레트: 나만의 물감 만들기
+      { id: 'palette', label: '나만의 물감 만들기', icon: '🖌️', position: new THREE.Vector3(-2.75 + 0.92, 1.12, back + 0.48 + 0.1), available: true },
       { id: 'camera', label: '사진으로 색칠 그림 만들기', icon: '📷', position: new THREE.Vector3(DOOR_X + 1.25 + 0.24, 2.08, front - 0.14), available: true },
     ],
     setPlant(slot: PlantSlot, kind: PlantKind) {

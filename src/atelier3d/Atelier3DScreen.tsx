@@ -10,6 +10,7 @@ import type { Activity } from './room';
 import { hintItems } from './hints';
 import { useHintsDone } from '../app/useHintsDone';
 import { PaintingPicker } from '../photo/PaintingPicker';
+import { PaletteDialog } from './PaletteDialog';
 import { PhotoDialog } from '../photo/PhotoDialog';
 import { listStoredPaintings, type StoredPaintingSummary } from '../storage/db';
 import { BUILTIN_PAINTINGS } from '../coloring/builtinPaintings';
@@ -33,6 +34,8 @@ export function Atelier3DScreen({ startSeated, onStartColoring }: Atelier3DScree
   const [decor, setDecor] = useState(loadDecor);
   /** 화분을 고르는 중인 자리. 고르는 창이 닫혀 있으면 null. */
   const [plantSlot, setPlantSlot] = useState<PlantSlot | null>(null);
+  /** 책상 위의 팔레트를 눌러 나만의 물감을 만드는 창이 열려 있는지 */
+  const [paletteOpen, setPaletteOpen] = useState(false);
   /** 카메라를 눌러 사진을 올리는 창이 열려 있는지 */
   const [photoOpen, setPhotoOpen] = useState(false);
   /** 이젤에서 그림을 고르는 중이면 사진으로 만든 그림의 목록 */
@@ -89,10 +92,14 @@ export function Atelier3DScreen({ startSeated, onStartColoring }: Atelier3DScree
           },
           onEaselPicture: setEaselPainting,
           onCamera: () => setPhotoOpen(true),
+          onPaletteSpot: () => setPaletteOpen(true),
           onGalleryWall: () => setWallPickerOpen(true),
           onWallPictureSelect: setWallSelected,
           // 걷기 시작하면 그림 벽 꾸미기를 마친다 ("다 했어요" 와 같다)
-          onCharacterMove: () => setWallPickerOpen(false),
+          onCharacterMove: () => {
+            setWallPickerOpen(false);
+            setPaletteOpen(false);
+          },
           onWallChange: (wall) =>
             setDecor((previous) => {
               const next = { ...previous, wall };
@@ -201,7 +208,7 @@ export function Atelier3DScreen({ startSeated, onStartColoring }: Atelier3DScree
         </p>
       )}
       {error && <p className="atelier__message">{error}</p>}
-      {!error && !wallSelected && hints.length > 0 && (
+      {!error && !wallSelected && !paletteOpen && hints.length > 0 && (
         <p className="atelier__hint" data-testid="atelier-hint">
           {hints.map((h) => (
             <span key={h.action} className="atelier__hint-item">
@@ -280,6 +287,21 @@ export function Atelier3DScreen({ startSeated, onStartColoring }: Atelier3DScree
             ×
           </button>
         </div>
+      )}
+      {paletteOpen && (
+        <PaletteDialog
+          colors={decor.colors ?? []}
+          onChange={(colors) =>
+            setDecor((previous) => {
+              const { colors: _old, ...rest } = previous;
+              void _old;
+              const next = colors.length ? { ...rest, colors } : rest;
+              saveDecor(next);
+              return next;
+            })
+          }
+          onClose={() => setPaletteOpen(false)}
+        />
       )}
       {photoOpen && (
         <PhotoDialog

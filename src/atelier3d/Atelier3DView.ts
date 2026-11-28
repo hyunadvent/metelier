@@ -100,6 +100,8 @@ export interface Atelier3DEvents {
   onEaselPicture(paintingId: string | null): void;
   /** 걸이대의 카메라를 눌렀을 때 */
   onCamera(): void;
+  /** 책상 위의 팔레트를 눌렀을 때 (나만의 물감 만들기) */
+  onPaletteSpot?(): void;
   /** 그림 벽의 표시를 눌렀을 때 */
   onGalleryWall(): void;
   /** 벽에 건 그림을 고르거나(눌렀거나 옮겼을 때) 고른 것을 풀었을 때 */
@@ -565,6 +567,9 @@ export class Atelier3DView {
         break;
       case 'camera':
         this.events.onCamera();
+        break;
+      case 'palette':
+        this.events.onPaletteSpot?.();
         break;
       case 'gallery-wall':
         this.focusGalleryWall();

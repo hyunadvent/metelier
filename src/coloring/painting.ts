@@ -3,7 +3,13 @@ import { decodeRegionIds } from './engine/regionMap';
 import { loadStoredPainting } from '../storage/db';
 
 /** 붓에 묻힐 수 있는 것: 물감 번호 또는 지우개. */
-export type Tool = number | 'eraser';
+/** 붓에 묻힐 것: 그림의 물감 번호, 지우개, 또는 나만의 물감 (#rrggbb) */
+export type Tool = number | 'eraser' | `#${string}`;
+
+/** 나만의 물감인가 */
+export function isCustomTool(tool: Tool | null): tool is `#${string}` {
+  return typeof tool === 'string' && tool.startsWith('#');
+}
 
 export interface PaletteEntry {
   number: number;

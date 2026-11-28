@@ -5,7 +5,7 @@ import { MAX_WALL_PICTURES, PICTURE_SLOTS, PLANT_SLOTS, type AtelierDecor, type 
  * 꾸밈 전체를 한 덩어리로 "나중 것이 이긴다" 로 맞추면, 다른 기기에서 화분 하나만 바꿔도
  * 이 기기에서 건 그림이 통째로 사라진다. 그래서 화분 자리, 액자 자리, 벽 그림 하나하나를 따로 맞춘다.
  *
- * 열쇠: "plant:<자리>", "picture:<자리>", "wall:<벽 그림 ID>"
+ * 열쇠: "plant:<자리>", "picture:<자리>", "wall:<벽 그림 ID>", "palette:colors" (나만의 물감 전체)
  */
 export interface DecorStamps {
   /** 그 조각을 마지막으로 바꾼(걸거나 옮긴) 때 */
@@ -23,7 +23,7 @@ function stampMap(raw: unknown): Record<string, number> {
   const out: Record<string, number> = {};
   if (typeof raw !== 'object' || raw === null) return out;
   for (const [key, value] of Object.entries(raw)) {
-    if (typeof value === 'number' && Number.isFinite(value) && value > 0 && /^(plant|picture|wall):[a-z0-9-]{1,41}$/.test(key)) out[key] = value;
+    if (typeof value === 'number' && Number.isFinite(value) && value > 0 && /^(plant|picture|wall|palette):[a-z0-9-]{1,41}$/.test(key)) out[key] = value;
   }
   return out;
 }
@@ -44,6 +44,7 @@ export function stampChanges(prev: AtelierDecor, next: AtelierDecor, stamps: Dec
   for (const slot of PICTURE_SLOTS) {
     if (JSON.stringify(prev.pictures[slot]) !== JSON.stringify(next.pictures[slot])) changed[`picture:${slot}`] = now;
   }
+  if (JSON.stringify(prev.colors ?? []) !== JSON.stringify(next.colors ?? [])) changed['palette:colors'] = now;
   const before = new Map(prev.wall.map((p) => [p.id, p]));
   const after = new Set(next.wall.map((p) => p.id));
   for (const p of next.wall) {
@@ -110,7 +111,9 @@ export function mergeDecor(a: StampedDecor, b: StampedDecor, prefer: 'a' | 'b', 
   }
   for (const p of wall) delete removed[`wall:${p.id}`];
 
-  return { decor: { version: 1, pictures, plants, wall }, stamps: { changed, removed } };
+  const colors = pick('palette:colors', first.decor.colors ?? [], second.decor.colors ?? []);
+
+  return { decor: { version: 1, pictures, plants, wall, ...(colors.length ? { colors } : {}) }, stamps: { changed, removed } };
 }
 
 /** 두 꾸밈이 같은가 (기록까지) */

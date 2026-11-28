@@ -56,6 +56,11 @@
   font-weight: 600;
 }
 
+button.pill {
+  font-family: inherit;
+  cursor: pointer;
+}
+
 .coloring__spacer {
   flex: 1;
 }
@@ -251,8 +256,11 @@
     gap: 9px;
     padding: 10px 14px;
   }
+  /* 좁은 화면: 제목은 줄여서 보여 준다 (눌러서 다른 그림 고르기) */
   .pill--title {
-    display: none;
+    max-width: 34vw;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .coloring__top {
     gap: 8px;
@@ -654,4 +662,82 @@
   width: 100%;
   height: 100%;
   pointer-events: none;
+}
+
+@media (max-width: 600px) and (orientation: portrait) {
+  /* 세로 휴대폰: 제목은 아랫줄 (되돌리기 옆), 남은 폭만큼 */
+  .coloring__top .pill--title {
+    order: 2;
+    flex: 1 1 0;
+    min-width: 0;
+    max-width: none;
+    padding: 8px 12px;
+    font-size: 15px;
+  }
+}
+
+/* ── 내 물감: 물감 줄 오른쪽 버튼과, 위로 펼쳐지는 나만의 물감 ── */
+.pot--custom {
+  display: grid;
+  place-items: center;
+  padding: 0;
+  font-family: inherit;
+  background: conic-gradient(#f4a7b9, #ffcf9e, #fff1a8, #bfe3c0, #a8d8ea, #c9b6f2, #f4a7b9);
+  cursor: pointer;
+}
+
+.pot--custom span {
+  display: grid;
+  place-items: center;
+  width: 62%;
+  height: 62%;
+  border-radius: 50%;
+  background: #fffaf2;
+  font-size: 0.8em;
+}
+
+.custom-colors {
+  position: absolute;
+  right: max(16px, calc(50% - 360px));
+  bottom: 112px;
+  z-index: 4;
+  display: grid;
+  gap: 8px;
+  max-width: min(320px, calc(100% - 32px));
+  padding: 12px 14px;
+  border-radius: 18px;
+  border: 3px solid #d9a56c;
+  background: #fbe3c0;
+  box-shadow: 0 5px 0 #c98f55, 0 10px 24px rgb(122 82 45 / 25%);
+  color: #5b4636;
+}
+
+.custom-colors__title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.custom-colors__empty {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.custom-colors__pots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pot--small {
+  width: 40px;
+  height: 40px;
+}
+
+@media (max-width: 600px) {
+  .custom-colors {
+    right: 12px;
+    bottom: 96px;
+  }
 }

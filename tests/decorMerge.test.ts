@@ -73,6 +73,14 @@ describe('꾸밈 합치기', () => {
     expect(stampChanges(before, after, EMPTY_STAMPS, 700).changed).toEqual({ 'wall:w1': 700 });
   });
 
+  it('나만의 물감은 나중에 바꾼 기기의 것을 따른다', () => {
+    const base: StampedDecor = { decor: DEFAULT_DECOR, stamps: EMPTY_STAMPS };
+    const phone = { decor: { ...DEFAULT_DECOR, colors: ['#ff0000'] }, stamps: stampChanges(DEFAULT_DECOR, { ...DEFAULT_DECOR, colors: ['#ff0000'] }, EMPTY_STAMPS, 100) };
+    const pc = { decor: { ...DEFAULT_DECOR, colors: ['#00ff00'] }, stamps: stampChanges(DEFAULT_DECOR, { ...DEFAULT_DECOR, colors: ['#00ff00'] }, EMPTY_STAMPS, 200) };
+    expect(mergeDecor(phone, pc, 'a').decor.colors).toEqual(['#00ff00']);
+    expect(mergeDecor(phone, base, 'b').decor.colors).toEqual(['#ff0000']);
+  });
+
   it('저장된 기록 가운데 이상한 값은 버린다', () => {
     expect(normalizeStamps({ changed: { 'wall:w1': 5, 'wall:../x': 9, 'plant:window-stand': 'a' }, removed: null })).toEqual({
       changed: { 'wall:w1': 5 },

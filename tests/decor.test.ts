@@ -162,3 +162,13 @@ describe('액자 크기', () => {
     expect(wall.map((w) => w.size)).toEqual(['large', undefined, undefined]);
   });
 });
+
+describe('나만의 물감', () => {
+  it('#rrggbb 만, 겹치지 않게, 소문자로 읽는다', async () => {
+    const { parseCustomColors, MAX_CUSTOM_COLORS } = await import('../src/atelier3d/decor');
+    expect(parseCustomColors(['#FFAA00', '#ffaa00', 'red', '#12345', 3, '#00ff00'])).toEqual(['#ffaa00', '#00ff00']);
+    expect(parseCustomColors(Array.from({ length: 20 }, (_, i) => `#0000${(i + 16).toString(16)}`))).toHaveLength(MAX_CUSTOM_COLORS);
+    expect(normalizeDecor({ colors: [] }).colors).toBeUndefined();
+    expect(normalizeDecor({ colors: ['#abcdef'] }).colors).toEqual(['#abcdef']);
+  });
+});
