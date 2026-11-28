@@ -12,6 +12,16 @@ const HANDLE_REACH = { x: 230, y: 160 };
 
 type Mode = 'idle' | 'move' | 'paint';
 
+/** 붓털 모양: 평소, 그리고 종이에 대고 칠할 때 (붓 끝이 아래로 꺾여 눌린다) */
+const TUFT = {
+  rest: 'M -14 0 C -6 -9, 14 -13, 42 -12 L 42 12 C 14 13, -6 9, -14 0 Z',
+  pressed: 'M -6 13 C -12 3, 6 -12, 42 -12 L 42 12 C 26 14, 8 18, -6 13 Z',
+};
+const TUFT_SHINE = {
+  rest: 'M 2 -3 C 14 -6, 26 -7, 38 -7',
+  pressed: 'M -2 2 C 8 -6, 24 -8, 38 -7',
+};
+
 interface Pot {
   tool: Tool;
   x: number;
@@ -50,6 +60,13 @@ export function Brush({ view, palette, tool, onDip, onEmptyStroke, onPaint, cue 
   const drag = useRef({ mode: 'idle' as Mode, pointerId: -1, dx: 0, dy: 0, stroking: false });
   const pots = useRef<Pot[]>([]);
   const insidePot = useRef<Tool | null>(null);
+  const tuftRef = useRef<SVGPathElement>(null);
+  const shineRef = useRef<SVGPathElement>(null);
+  /** 붓 끝을 꺾는다(칠하는 중) / 편다 */
+  const pressTuft = (pressed: boolean) => {
+    tuftRef.current?.setAttribute('d', pressed ? TUFT.pressed : TUFT.rest);
+    shineRef.current?.setAttribute('d', pressed ? TUFT_SHINE.pressed : TUFT_SHINE.rest);
+  };
 
   const moveTo = useCallback((x: number, y: number) => {
     const nx = Math.min(window.innerWidth - EDGE, Math.max(EDGE, x));
@@ -147,6 +164,7 @@ export function Brush({ view, palette, tool, onDip, onEmptyStroke, onPaint, cue 
     setAngle(PAINTING_ANGLE);
     // 칠하는 동안 붓털이 종이에 눌린 모양이 된다
     rootRef.current?.setAttribute('data-painting', 'true');
+    pressTuft(true);
     if (tool === null) {
       onEmptyStroke();
       return;
@@ -189,6 +207,7 @@ export function Brush({ view, palette, tool, onDip, onEmptyStroke, onPaint, cue 
     drag.current = { mode: 'idle', pointerId: -1, dx: 0, dy: 0, stroking: false };
     rootRef.current?.removeAttribute('data-dragging');
     rootRef.current?.removeAttribute('data-painting');
+    pressTuft(false);
   };
 
   const bristle =
@@ -215,14 +234,15 @@ export function Brush({ view, palette, tool, onDip, onEmptyStroke, onPaint, cue 
         {/* 붓털: 칠하는 동안 쇠테 쪽으로 살짝 눌린다 */}
         <g className="brush__tuft">
         <path
-          d="M -14 0 C -6 -9, 14 -13, 42 -12 L 42 12 C 14 13, -6 9, -14 0 Z"
+          ref={tuftRef}
+          d={TUFT.rest}
           fill={bristle}
           stroke="#5b4636"
           strokeWidth="2"
           strokeLinejoin="round"
           strokeDasharray={tool === 'eraser' ? '5 4' : undefined}
         />
-        <path d="M 2 -3 C 14 -6, 26 -7, 38 -7" stroke="rgb(255 255 255 / 45%)" strokeWidth="2.5" strokeLinecap="round" fill="none" />
+        <path ref={shineRef} d={TUFT_SHINE.rest} stroke="rgb(255 255 255 / 45%)" strokeWidth="2.5" strokeLinecap="round" fill="none" />
         </g>
 
         {/* 어디를 잡을지 알려 주는 깜빡임: 손잡이 테두리, 붓 끝(칠하는 점) */}

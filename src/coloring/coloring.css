@@ -573,12 +573,12 @@
   }
 }
 
-/* 붓 끝으로 칠하는 동안: 붓털이 종이에 눌려 짧고 넓적해진다 */
+/* 붓 끝으로 칠하는 동안: 붓 끝이 종이에 눌려 꺾이고(Brush.tsx 의 TUFT), 살짝 짧아진다 */
 .brush__tuft {
   transform-origin: 42px 0;
-  transition: transform 0.12s ease-out;
+  transition: transform 0.1s ease-out;
 }
 
 .brush[data-painting='true'] .brush__tuft {
-  transform: scale(0.84, 1.16);
+  transform: scale(0.94, 1.08);
 }
