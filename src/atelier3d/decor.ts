@@ -1,4 +1,5 @@
 import { notifyLocalChange } from '../storage/changes';
+import { normalizeStamps, stampChanges, type DecorStamps } from './decorMerge';
 
 // 화실의 꾸민 상태. 방을 만드는 함수가 이 데이터를 읽어 그리므로,
 // 화실 화면과 색칠 화면 배경이 같은 꾸밈을 보여 준다 (R9).
@@ -165,6 +166,8 @@ function parseWall(raw: unknown): WallPicture[] {
 const STORAGE_KEY = 'metelier.decor';
 /** 꾸밈을 마지막으로 바꾼 때 (동기화가 어느 쪽이 새것인지 가리는 데 쓴다). 한 번도 바꾸지 않았으면 없다. */
 const UPDATED_KEY = 'metelier.decor.updatedAt';
+/** 조각마다 바꾼 때의 기록 (decorMerge.ts). 다른 기기의 꾸밈과 조각 단위로 합치는 데 쓴다. */
+const STAMPS_KEY = 'metelier.decor.stamps';
 
 function parsePicture(raw: unknown): PictureRef | null {
   if (typeof raw !== 'object' || raw === null) return null;
@@ -211,14 +214,27 @@ export function loadDecor(): AtelierDecor {
  * 꾸밈을 저장한다.
  * @param fromSync 동기화가 서버에서 받아 쓰는 중이면 그때의 시각. 바뀌었다고 알리지 않는다.
  */
-export function saveDecor(decor: AtelierDecor, fromSync?: { updatedAt: number }): void {
+export function saveDecor(decor: AtelierDecor, fromSync?: { updatedAt: number; stamps: DecorStamps }): void {
+  const now = Date.now();
+  // 직접 꾸민 것이면 바뀐 조각을 기록하고, 동기화가 쓰는 것이면 합친 기록을 그대로 둔다
+  const stamps = fromSync ? fromSync.stamps : stampChanges(loadDecor(), decor, loadDecorStamps(), now);
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(decor));
-    localStorage.setItem(UPDATED_KEY, String(fromSync?.updatedAt ?? Date.now()));
+    localStorage.setItem(UPDATED_KEY, String(fromSync?.updatedAt ?? now));
+    localStorage.setItem(STAMPS_KEY, JSON.stringify(stamps));
   } catch {
     // 저장할 수 없는 환경이면 이번 접속 동안만 유지된다.
   }
   if (!fromSync) notifyLocalChange('decor', 'main');
+}
+
+/** 조각마다 바꾼 때의 기록 */
+export function loadDecorStamps(): DecorStamps {
+  try {
+    return normalizeStamps(JSON.parse(localStorage.getItem(STAMPS_KEY) ?? 'null'));
+  } catch {
+    return normalizeStamps(null);
+  }
 }
 
 /** 꾸밈을 마지막으로 바꾼 때. 한 번도 바꾸지 않았으면 0 */
@@ -236,6 +252,7 @@ export function resetDecor(): void {
   try {
     localStorage.removeItem(STORAGE_KEY);
     localStorage.removeItem(UPDATED_KEY);
+    localStorage.removeItem(STAMPS_KEY);
   } catch {
     // 지울 수 없으면 그대로 둔다.
   }

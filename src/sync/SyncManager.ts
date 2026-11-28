@@ -1,4 +1,5 @@
-import { decorUpdatedAt, loadDecor, normalizeDecor, resetDecor, saveDecor } from '../atelier3d/decor';
+import { decorUpdatedAt, loadDecor, loadDecorStamps, normalizeDecor, resetDecor, saveDecor } from '../atelier3d/decor';
+import { mergeDecor, normalizeStamps, sameStampedDecor, type StampedDecor } from '../atelier3d/decorMerge';
 import { notifyRemoteApplied, onLocalChange, type SyncKind } from '../storage/changes';
 import {
   clearLocalPaintings,
@@ -135,10 +136,13 @@ export class SyncManager {
     if (this.stopped) return;
     this.setStatus({ state: 'syncing', lastSyncedAt: this.status.lastSyncedAt });
     try {
-      const [remote, local, tombstones] = await Promise.all([this.store.list(), this.localEntries(), listTombstones()]);
-      const byId = new Map(remote.map((r) => [`${r.kind}:${r.key}`, r]));
+      const [all, local, tombstones] = await Promise.all([this.store.list(), this.localEntries(), listTombstones()]);
       const applied = new Set<SyncKind>();
-      for (const action of planSync(local, tombstones, remote)) {
+      // 꾸밈은 한 덩어리로 "나중 것이 이긴다" 가 아니라 조각마다 합친다
+      if (await this.syncDecor(all.find((r) => r.kind === 'decor' && r.key === 'main'))) applied.add('decor');
+      const remote = all.filter((r) => r.kind !== 'decor');
+      const byId = new Map(remote.map((r) => [`${r.kind}:${r.key}`, r]));
+      for (const action of planSync(local.filter((e) => e.kind !== 'decor'), tombstones, remote)) {
         if (this.stopped) return;
         await this.apply(action, byId.get(`${action.kind}:${action.key}`), applied);
       }
@@ -154,6 +158,39 @@ export class SyncManager {
       });
       this.schedule(RETRY_MS);
     }
+  }
+
+  /**
+   * 꾸밈을 서버와 합친다. 조각(화분 자리, 액자 자리, 벽 그림 하나하나)마다 나중에 바꾼 쪽을 따른다.
+   * @returns 이 브라우저의 꾸밈이 바뀌었으면 true
+   */
+  private async syncDecor(remote: RemoteItem | undefined): Promise<boolean> {
+    const localTime = decorUpdatedAt();
+    const local: StampedDecor = { decor: loadDecor(), stamps: loadDecorStamps() };
+    const server: StampedDecor | null =
+      remote && !remote.deleted ? { decor: normalizeDecor(remote.data), stamps: normalizeStamps((remote.data as { stamps?: unknown } | null)?.stamps) } : null;
+    if (!server) {
+      // 서버에 없으면 이 브라우저에서 꾸민 것을 올린다
+      if (localTime > 0) await this.store.put({ kind: 'decor', key: 'main', updatedAt: localTime, data: { ...local.decor, stamps: local.stamps } }, null);
+      return false;
+    }
+    if (localTime === 0) {
+      // 이 브라우저에서는 꾸민 적이 없다: 서버의 것을 그대로 쓴다
+      saveDecor(server.decor, { updatedAt: remote!.updatedAt, stamps: server.stamps });
+      return true;
+    }
+    if (localTime === remote!.updatedAt) return false;
+    // 기록이 없는 조각은 나중에 저장한 쪽을 따른다
+    const merged = mergeDecor(local, server, localTime > remote!.updatedAt ? 'a' : 'b');
+    const localChanged = !sameStampedDecor(merged, local);
+    if (sameStampedDecor(merged, server)) {
+      saveDecor(server.decor, { updatedAt: remote!.updatedAt, stamps: server.stamps });
+      return localChanged;
+    }
+    const updatedAt = Math.max(Date.now(), localTime + 1, remote!.updatedAt + 1);
+    await this.store.put({ kind: 'decor', key: 'main', updatedAt, data: { ...merged.decor, stamps: merged.stamps } }, null);
+    saveDecor(merged.decor, { updatedAt, stamps: merged.stamps });
+    return localChanged;
   }
 
   /** 이 브라우저에 있는 것들과 그 바뀐 때 */
@@ -197,7 +234,6 @@ export class SyncManager {
   private async upload(kind: SyncKind, key: string): Promise<void> {
     switch (kind) {
       case 'decor':
-        await this.store.put({ kind, key, updatedAt: decorUpdatedAt(), data: loadDecor() }, null);
         return;
       case 'progress': {
         const p = await loadProgress(key);
@@ -232,7 +268,6 @@ export class SyncManager {
     const data = (remote.data ?? {}) as Record<string, unknown>;
     switch (kind) {
       case 'decor':
-        saveDecor(normalizeDecor(remote.data), { updatedAt });
         return;
       case 'progress': {
         const file = await this.store.fetchFile(kind, key);
@@ -270,7 +305,6 @@ export class SyncManager {
   private async deleteLocal(kind: SyncKind, key: string): Promise<void> {
     switch (kind) {
       case 'decor':
-        resetDecor();
         return;
       case 'progress':
         await deleteProgress(key, { fromSync: true });

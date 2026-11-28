@@ -20,10 +20,16 @@ export class WallImageCache {
   get(paintingId: string): Promise<WallImage | null> {
     let entry = this.cache.get(paintingId);
     if (!entry) {
-      entry = load(paintingId).catch((e: unknown) => {
-        console.warn(e);
-        return null;
-      });
+      entry = load(paintingId)
+        .catch((e: unknown) => {
+          console.warn(e);
+          return null;
+        })
+        .then((image) => {
+          // 아직 없는 작품(다른 기기에서 받기 전)은 다음에 다시 찾아본다
+          if (!image) this.cache.delete(paintingId);
+          return image;
+        });
       this.cache.set(paintingId, entry);
     }
     return entry;

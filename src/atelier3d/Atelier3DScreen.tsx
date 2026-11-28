@@ -140,7 +140,8 @@ export function Atelier3DScreen({ startSeated, onStartColoring }: Atelier3DScree
   useEffect(
     () =>
       onRemoteApplied((kinds) => {
-        if (!kinds.has('decor')) return;
+        // 작품만 새로 받았어도 벽에 걸린 그림이 보이도록 다시 건다
+        if (!kinds.has('decor') && !kinds.has('gallery')) return;
         const next = loadDecor();
         setDecor(next);
         viewRef.current?.applyDecor(next);

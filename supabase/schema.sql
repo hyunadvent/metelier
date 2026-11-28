@@ -20,6 +20,11 @@ create table if not exists public.metelier_items (
 
 alter table public.metelier_items enable row level security;
 
+-- 로그인한 사람(authenticated)만 표를 쓸 수 있게 한다. 로그인하지 않은 사람(anon)에게는 주지 않는다.
+-- 어느 줄을 볼 수 있는지는 아래 RLS 정책이 정한다 (자기 줄만).
+revoke all on public.metelier_items from anon;
+grant select, insert, update, delete on public.metelier_items to authenticated;
+
 drop policy if exists "metelier_items_select_own" on public.metelier_items;
 drop policy if exists "metelier_items_insert_own" on public.metelier_items;
 drop policy if exists "metelier_items_update_own" on public.metelier_items;
