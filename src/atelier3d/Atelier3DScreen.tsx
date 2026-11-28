@@ -9,6 +9,7 @@ import { isTouchDevice } from '../app/device';
 import type { Activity } from './room';
 import { hintItems } from './hints';
 import { useHintsDone } from '../app/useHintsDone';
+import { useAuth } from '../auth/AuthContext';
 import { PaintingPicker } from '../photo/PaintingPicker';
 import { PaletteDialog } from './PaletteDialog';
 import { PhotoDialog } from '../photo/PhotoDialog';
@@ -53,6 +54,18 @@ export function Atelier3DScreen({ startSeated, onStartColoring }: Atelier3DScree
   /** 다른 기기에서 꾸민 것과 작품을 받아 오는 중 */
   const loadingSaved = syncStatus?.state === 'syncing' && (syncStatus.downloading ?? 0) > 0;
   const [error, setError] = useState<string | null>(null);
+  /**
+   * 그림 걸기, 사진으로 그림 만들기는 로그인해야 쓸 수 있다 (만든 것을 계정에 저장하므로).
+   * 로그인 기능이 꺼진 곳(설정이 없는 개발 환경)에서는 막지 않는다.
+   */
+  const auth = useAuth();
+  const needLoginRef = useRef<(reason: string) => boolean>(() => false);
+  needLoginRef.current = (reason: string) => {
+    if (auth.mode === 'off' || auth.user) return false;
+    if (auth.loading) setToast('로그인을 확인하는 중이에요. 잠시 뒤에 다시 눌러 주세요');
+    else auth.openLogin(reason);
+    return true;
+  };
   /** 안내 문구에서 이미 해 본 조작. 로그인하지 않았으면 접속할 때마다 처음부터 보여 준다. */
   const [hintsDone, markHint] = useHintsDone();
   const markRef = useRef(markHint);
@@ -91,7 +104,11 @@ export function Atelier3DScreen({ startSeated, onStartColoring }: Atelier3DScree
             startRef.current(id);
           },
           onEaselPicture: setEaselPainting,
-          onCamera: () => setPhotoOpen(true),
+          onCamera: () => {
+            if (needLoginRef.current('사진으로 색칠 그림을 만들려면 로그인해 주세요. 만든 그림은 계정에 저장돼요.')) return;
+            setPhotoOpen(true);
+          },
+          canUseGalleryWall: () => !needLoginRef.current('완성한 그림을 벽에 걸려면 로그인해 주세요. 꾸민 화실은 계정에 저장돼요.'),
           onPaletteSpot: () => setPaletteOpen(true),
           onGalleryWall: () => setWallPickerOpen(true),
           onWallPictureSelect: setWallSelected,

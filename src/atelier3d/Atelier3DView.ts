@@ -104,6 +104,8 @@ export interface Atelier3DEvents {
   onPaletteSpot?(): void;
   /** 그림 벽의 표시를 눌렀을 때 */
   onGalleryWall(): void;
+  /** 그림 벽으로 가도 되는가 (로그인해야 그림을 걸 수 있다). false 면 시점을 옮기지 않는다. */
+  canUseGalleryWall?(): boolean;
   /** 벽에 건 그림을 고르거나(눌렀거나 옮겼을 때) 고른 것을 풀었을 때 */
   onWallPictureSelect(id: string | null): void;
   /** 벽 그림이 바뀌었을 때 (걸기, 옮기기, 치우기). 저장은 받는 쪽이 한다. */
@@ -572,6 +574,7 @@ export class Atelier3DView {
         this.events.onPaletteSpot?.();
         break;
       case 'gallery-wall':
+        if (this.events.canUseGalleryWall?.() === false) break;
         this.focusGalleryWall();
         this.events.onGalleryWall();
         break;
