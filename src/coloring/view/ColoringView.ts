@@ -77,6 +77,8 @@ export class ColoringView {
    */
   private readonly tiles: { x: number; y: number; w: number; h: number; ctx: CanvasRenderingContext2D; texture: Texture }[] = [];
   private readonly tileCols: number;
+  /** 붓 범위 배율 (색칠 버프가 걸리면 2) */
+  private brushScale = 1;
   /** 다음 화면 그리기 전에 화면에 옮길 것이 있는가 (붓을 움직일 때마다가 아니라 한 프레임에 한 번만 옮긴다) */
   private flushPending = false;
   private readonly labels = new Map<number, Text>();
@@ -276,6 +278,13 @@ export class ColoringView {
     this.zoomAt(rect.left + (avail.left + avail.right) / 2, rect.top + (avail.top + avail.bottom) / 2, factor);
   }
 
+  /** 붓이 칠하는 범위의 배율을 바꾼다 (색칠 버프) */
+  setBrushScale(scale: number): void {
+    if (scale === this.brushScale) return;
+    this.brushScale = scale;
+    this.engine.setRadius((BRUSH_SCREEN_RADIUS * scale) / this.placement().scale);
+  }
+
   resetZoom(): void {
     this.zoom = 1;
     this.place({ scale: this.fit, x: 0, y: 0 });
@@ -325,7 +334,7 @@ export class ColoringView {
     const next = clampPlacement(p, this.avail(), width, height);
     this.world.scale.set(next.scale);
     this.world.position.set(next.x, next.y);
-    this.engine.setRadius(BRUSH_SCREEN_RADIUS / next.scale);
+    this.engine.setRadius((BRUSH_SCREEN_RADIUS * this.brushScale) / next.scale);
     this.events.onPaperMove?.(
       { x: next.x, y: next.y, width: width * next.scale, height: height * next.scale },
       this.app.screen.width,

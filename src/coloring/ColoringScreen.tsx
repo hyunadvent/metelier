@@ -3,6 +3,7 @@ import type { AtelierLayout } from '../atelier/scene';
 import { EaselBackdrop, type ScreenRect } from '../atelier3d/EaselBackdrop';
 import { Brush } from './Brush';
 import { useHintsDone } from '../app/useHintsDone';
+import { brushScale, onPaintBuff, paintBuffLeft } from '../app/paintBuff';
 import { CompleteDialog, ConfirmDialog, GalleryDialog } from './dialogs';
 import { hexToRgb, loadPainting, type LoadedPainting, type PaintingMeta, type Tool } from './painting';
 import { restoreSession, saveSession } from './persistence';
@@ -58,6 +59,8 @@ export function ColoringScreen({ paintingId, backdrop, onExit }: ColoringScreenP
   const meta: PaintingMeta | null = painting?.meta ?? null;
   /** 붓 다루는 법을 해 봤는가. 로그인하지 않았으면 접속할 때마다 다시 알려 준다. */
   const [hintsDone, markHint] = useHintsDone();
+  /** 색칠 버프가 남은 시간 (초). 걸려 있지 않으면 0 */
+  const [buffLeft, setBuffLeft] = useState(() => Math.ceil(paintBuffLeft() / 1000));
   /** 필요한 곳을 모두 칠한 물감 번호 (칠한 칸 수가 바뀔 때마다 다시 센다) */
   const filledCount = progress.filled;
   const done = useMemo(() => (view && filledCount >= 0 ? view.finishedColors() : new Set<number>()), [view, filledCount]);
@@ -205,6 +208,21 @@ export function ColoringScreen({ paintingId, backdrop, onExit }: ColoringScreenP
     };
   }, [dialog, view]);
 
+  // ── 색칠 버프: 걸려 있는 동안 붓 범위 2배, 남은 시간 표시 ──
+  useEffect(() => {
+    const tick = () => {
+      setBuffLeft(Math.ceil(paintBuffLeft() / 1000));
+      view?.setBrushScale(brushScale());
+    };
+    tick();
+    const timer = window.setInterval(tick, 500);
+    const stop = onPaintBuff(tick);
+    return () => {
+      window.clearInterval(timer);
+      stop();
+    };
+  }, [view]);
+
   // ── 붓, 설정 ───────────────────────────────────────
   useEffect(() => {
     if (!view || !meta) return;
@@ -308,6 +326,11 @@ export function ColoringScreen({ paintingId, backdrop, onExit }: ColoringScreenP
               >
                 🏠
               </button>
+            )}
+            {buffLeft > 0 && (
+              <div className="pill pill--buff" aria-label={`색칠 버프: 붓 범위 2배, ${buffLeft}초 남음`} title="차를 마셔서 붓이 2배로 넓게 칠해져요">
+                ✨ ×2 · {buffLeft}초
+              </div>
             )}
             <div className="pill" aria-label="칠한 칸 수">
               🎨 {progress.filled} / {progress.total}

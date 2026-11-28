@@ -74,6 +74,7 @@ export function Atelier3DScreen({ startSeated, onStartColoring }: Atelier3DScree
             setActivity(next);
           },
           onControl: (kind) => markRef.current(kind),
+          onPaintBuff: () => setToast('✨ 색칠 버프! 1분 동안 붓이 2배로 넓게 칠해져요'),
           onEasel: () => {
             markRef.current('pick');
             // 사진으로 만든 그림이 있으면 고르게 하고, 없으면 기본 그림을 바로 연다

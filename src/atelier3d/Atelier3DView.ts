@@ -13,6 +13,8 @@ import {
   type WallPicture,
 } from './decor';
 import { WallImageCache } from './wallImages';
+import { Stardust } from './Stardust';
+import { grantPaintBuff, paintBuffLeft, teaBuffReached } from '../app/paintBuff';
 import { loadEaselPicture } from './easelPicture';
 import {
   approachCamera,
@@ -107,6 +109,8 @@ export interface Atelier3DEvents {
   onCharacterMove(): void;
   /** 둘러보기, 확대·축소, 점프를 했을 때 (안내 문구를 지우는 데 쓴다). 자주 불리므로 받는 쪽은 가볍게 처리한다. */
   onControl?(kind: 'walk' | 'look' | 'zoom' | 'jump'): void;
+  /** 차를 마셔 색칠 버프가 걸렸을 때 */
+  onPaintBuff?(): void;
   /** 바꿀 수 있는 화분을 눌렀을 때 */
   onPlantSpot(slot: PlantSlot): void;
   /** 아직 준비 중인 활동을 눌렀을 때 */
@@ -125,6 +129,11 @@ export class Atelier3DView {
   /** 물체 둘레에 가는 갈색 선을 둘러 일러스트 같은 느낌을 낸다. */
   private readonly outline: OutlineEffect;
   private readonly scene = new THREE.Scene();
+  /** 색칠 버프가 걸려 있는 동안 머리 위로 떨어지는 별가루 */
+  private readonly stardust = new Stardust();
+  private readonly headAt = new THREE.Vector3();
+  /** 이번에 앉아서 차를 마신 시간 (초) */
+  private teaTime = 0;
   private readonly camera = new THREE.PerspectiveCamera(42, 1, 0.1, 80);
   private readonly room: AtelierRoom;
   private readonly character = new Character3D();
@@ -210,7 +219,7 @@ export class Atelier3DView {
     this.wall = decor.wall;
     void this.rebuildWall();
     void this.refreshEasel();
-    this.scene.add(this.room.group, this.character.group);
+    this.scene.add(this.room.group, this.character.group, this.stardust.points);
 
     const canvas = this.renderer.domElement;
     canvas.style.display = 'block';
@@ -457,6 +466,7 @@ export class Atelier3DView {
     window.removeEventListener('keyup', this.onKeyUp);
     window.removeEventListener('blur', this.onBlur);
     this.room.dispose();
+    this.stardust.dispose();
     this.character.dispose();
     this.renderer.dispose();
     // 화실과 색칠 화면을 오갈 때마다 WebGL 연결이 쌓이지 않게 바로 돌려준다
@@ -960,6 +970,17 @@ export class Atelier3DView {
     } else {
       g.position.set(this.position.x, this.jump.height, this.position.z);
     }
+    // 차를 잠시 마시면 색칠 버프가 걸린다
+    if (this.activity === 'tea') {
+      const before = this.teaTime;
+      this.teaTime += dt;
+      if (teaBuffReached(before, this.teaTime)) {
+        grantPaintBuff();
+        this.events.onPaintBuff?.();
+      }
+    } else {
+      this.teaTime = 0;
+    }
     // 가까운 쪽으로 부드럽게 돌아선다.
     const turn = Math.atan2(Math.sin(this.heading - g.rotation.y), Math.cos(this.heading - g.rotation.y));
     g.rotation.y += turn * Math.min(1, dt * 12);
@@ -976,6 +997,8 @@ export class Atelier3DView {
       if (arrived) this.cameraGoal = null;
     }
     this.placeCamera(Math.min(1, dt * 6));
+    g.updateMatrixWorld();
+    this.stardust.update(dt, paintBuffLeft() > 0, this.character.headPosition(this.headAt));
     // 캐릭터가 움직였거나 방이 바뀌었으면 그림자를 다시 그린다
     g.updateMatrixWorld();
     // 숨 쉬기처럼 작은 움직임은 0.5초마다만 그림자에 반영한다

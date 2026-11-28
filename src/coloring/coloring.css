@@ -626,3 +626,22 @@
 .brush__flip:hover .brush__flip-face {
   fill: #fbe3c0;
 }
+
+/* 색칠 버프가 걸려 있을 때: 붓 범위 2배와 남은 시간 */
+.pill--buff {
+  order: 0;
+  border-color: #f2c94c;
+  background: #fff6d6;
+  color: #8a6420;
+  box-shadow: 0 3px 0 #e8c26a, 0 0 12px rgb(242 201 76 / 55%);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 600px) and (orientation: portrait) {
+  /* 세로 휴대폰: 버프 표시는 아랫줄 (되돌리기 옆) */
+  .coloring__top .pill--buff {
+    order: 2;
+    padding: 8px 12px;
+    font-size: 15px;
+  }
+}

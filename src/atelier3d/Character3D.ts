@@ -197,6 +197,11 @@ export class Character3D {
     this.head.rotation.set(0, 0, 0);
   }
 
+  /** 머리 가운데의 월드 좌표 */
+  headPosition(target: THREE.Vector3): THREE.Vector3 {
+    return this.head.getWorldPosition(target);
+  }
+
   /** 팔다리를 크게 움직이는 중인가 (걷기, 점프). 그림자를 매 프레임 다시 그려야 한다. */
   get animating(): boolean {
     return this.pose === 'walk' || this.wasAirborne;
