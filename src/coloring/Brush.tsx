@@ -145,6 +145,8 @@ export function Brush({ view, palette, tool, onDip, onEmptyStroke, onPaint, cue 
       return;
     }
     setAngle(PAINTING_ANGLE);
+    // 칠하는 동안 붓털이 종이에 눌린 모양이 된다
+    rootRef.current?.setAttribute('data-painting', 'true');
     if (tool === null) {
       onEmptyStroke();
       return;
@@ -186,6 +188,7 @@ export function Brush({ view, palette, tool, onDip, onEmptyStroke, onPaint, cue 
     }
     drag.current = { mode: 'idle', pointerId: -1, dx: 0, dy: 0, stroking: false };
     rootRef.current?.removeAttribute('data-dragging');
+    rootRef.current?.removeAttribute('data-painting');
   };
 
   const bristle =
@@ -209,7 +212,8 @@ export function Brush({ view, palette, tool, onDip, onEmptyStroke, onPaint, cue 
         {/* 쇠테 */}
         <rect x="40" y="-13" width="32" height="26" rx="4" fill="#cfd4dc" stroke="#7d8590" strokeWidth="2" />
         <path d="M 50 -12 V 12 M 62 -12 V 12" stroke="#9aa2ad" strokeWidth="1.5" />
-        {/* 붓털 */}
+        {/* 붓털: 칠하는 동안 쇠테 쪽으로 살짝 눌린다 */}
+        <g className="brush__tuft">
         <path
           d="M -14 0 C -6 -9, 14 -13, 42 -12 L 42 12 C 14 13, -6 9, -14 0 Z"
           fill={bristle}
@@ -219,6 +223,7 @@ export function Brush({ view, palette, tool, onDip, onEmptyStroke, onPaint, cue 
           strokeDasharray={tool === 'eraser' ? '5 4' : undefined}
         />
         <path d="M 2 -3 C 14 -6, 26 -7, 38 -7" stroke="rgb(255 255 255 / 45%)" strokeWidth="2.5" strokeLinecap="round" fill="none" />
+        </g>
 
         {/* 어디를 잡을지 알려 주는 깜빡임: 손잡이 테두리, 붓 끝(칠하는 점) */}
         <rect className="brush__cue brush__cue--handle" x="66" y="-17" width="196" height="34" rx="17" />

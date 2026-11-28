@@ -572,3 +572,13 @@
     opacity: 0.9;
   }
 }
+
+/* 붓 끝으로 칠하는 동안: 붓털이 종이에 눌려 짧고 넓적해진다 */
+.brush__tuft {
+  transform-origin: 42px 0;
+  transition: transform 0.12s ease-out;
+}
+
+.brush[data-painting='true'] .brush__tuft {
+  transform: scale(0.84, 1.16);
+}
