@@ -104,6 +104,8 @@ export interface Atelier3DEvents {
   onWallChange(wall: WallPicture[]): void;
   /** 캐릭터가 걷기 시작했을 때 (바닥을 누름, 키보드, 다른 활동으로 가기). 하던 꾸미기를 마친다. */
   onCharacterMove(): void;
+  /** 둘러보기, 확대·축소, 점프를 했을 때 (안내 문구를 지우는 데 쓴다). 자주 불리므로 받는 쪽은 가볍게 처리한다. */
+  onControl?(kind: 'walk' | 'look' | 'zoom' | 'jump'): void;
   /** 바꿀 수 있는 화분을 눌렀을 때 */
   onPlantSpot(slot: PlantSlot): void;
   /** 아직 준비 중인 활동을 눌렀을 때 */
@@ -552,6 +554,7 @@ export class Atelier3DView {
   private tryJump(): void {
     if (this.activity || this.wait || this.jump.height > 0) return;
     this.jump = { height: 0, velocity: JUMP_SPEED };
+    this.events.onControl?.('jump');
   }
 
   /** 화면의 한 점이 캐릭터 위인가. */
@@ -661,6 +664,7 @@ export class Atelier3DView {
       if (now > 0 && pinch.distance > 0) {
         this.cameraGoal = null;
         this.distance = Math.min(CAMERA.maxDistance, Math.max(CAMERA.minDistance, this.distance * (pinch.distance / now)));
+        this.events.onControl?.('zoom');
       }
       pinch.distance = now;
       return true;
@@ -669,6 +673,7 @@ export class Atelier3DView {
     if (t.role === 'look') {
       this.cameraGoal = null;
       this.azimuth -= dx * TOUCH_LOOK.azimuth;
+      this.events.onControl?.('look');
       this.polar = Math.min(CAMERA.maxPolar, Math.max(CAMERA.minPolar, this.polar - dy * TOUCH_LOOK.polar));
     } else {
       this.stick = stickFrom({ x: t.startX, y: t.startY }, { x: t.x, y: t.y }, STICK_RADIUS);
@@ -740,6 +745,7 @@ export class Atelier3DView {
     this.cameraGoal = null;
     // 좌우로는 제한 없이 한 바퀴 돌 수 있다.
     this.azimuth -= dx * 0.00294;
+    this.events.onControl?.('look');
     this.polar = Math.min(CAMERA.maxPolar, Math.max(CAMERA.minPolar, this.polar - dy * 0.00245));
   };
 
@@ -780,7 +786,10 @@ export class Atelier3DView {
       return;
     }
     const ground = this.groundAt(e.clientX, e.clientY);
-    if (ground) this.walkTo(clampDestination(ground, this.room));
+    if (ground) {
+      this.walkTo(clampDestination(ground, this.room));
+      this.events.onControl?.('walk');
+    }
   }
 
   private onPointerCancel = (e?: PointerEvent): void => {
@@ -807,6 +816,7 @@ export class Atelier3DView {
     e.preventDefault();
     this.cameraGoal = null;
     this.distance = Math.min(CAMERA.maxDistance, Math.max(CAMERA.minDistance, this.distance * Math.exp(e.deltaY * 0.001)));
+    this.events.onControl?.('zoom');
   };
 
   private onKeyDown = (e: KeyboardEvent): void => {
@@ -901,6 +911,7 @@ export class Atelier3DView {
     if (keyDir) {
       // 키보드로 걷는 동안에는 눌러서 정한 목적지를 잊는다.
       this.finishWallEditing();
+      this.events.onControl?.('walk');
       if (this.activity) this.standUp();
       this.target = null;
       this.onArrive = null;

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Atelier3DView } from './Atelier3DView';
 import { FRAME_INFO, FRAME_KINDS, loadDecor, MAX_WALL_PICTURES, PLANT_INFO, PLANT_KINDS, saveDecor, type PlantKind, type PlantSlot } from './decor';
 import { WallPicker } from './WallPicker';
@@ -7,6 +7,7 @@ import { onRemoteApplied } from '../storage/changes';
 import { useSync } from '../sync/SyncContext';
 import { isTouchDevice } from '../app/device';
 import type { Activity } from './room';
+import { hintItems, loadHintsDone, saveHintsDone, type HintAction } from './hints';
 import { PaintingPicker } from '../photo/PaintingPicker';
 import { PhotoDialog } from '../photo/PhotoDialog';
 import { listStoredPaintings, type StoredPaintingSummary } from '../storage/db';
@@ -22,14 +23,6 @@ interface Atelier3DScreenProps {
 }
 
 
-const HINTS: Record<Activity | 'none' | 'touch', string> = {
-  none: '바닥을 누르거나 WASD로 걷기 · 캐릭터나 스페이스로 점프 · 끌어서 둘러보기',
-  /** 터치 기기에서 서 있을 때 */
-  touch: '왼쪽 끌기: 걷기 · 오른쪽 끌기: 둘러보기 · 두 손가락: 확대 · 캐릭터 누르기: 점프',
-  paint: '이젤을 눌러 색칠할 그림을 고르세요',
-  tea: '창밖을 보며 차를 마시고 있어요 · 바닥을 누르면 일어나요',
-  read: '책을 읽고 있어요 · 바닥을 누르면 일어나요',
-};
 
 export function Atelier3DScreen({ startSeated, onStartColoring }: Atelier3DScreenProps) {
   const hostRef = useRef<HTMLDivElement>(null);
@@ -56,6 +49,19 @@ export function Atelier3DScreen({ startSeated, onStartColoring }: Atelier3DScree
   /** 다른 기기에서 꾸민 것과 작품을 받아 오는 중 */
   const loadingSaved = syncStatus?.state === 'syncing' && (syncStatus.downloading ?? 0) > 0;
   const [error, setError] = useState<string | null>(null);
+  /** 안내 문구에서 이미 해 본 조작 (이 기기에 기억한다) */
+  const [hintsDone, setHintsDone] = useState(loadHintsDone);
+  const hintsDoneRef = useRef(hintsDone);
+  const markHint = useCallback((action: HintAction) => {
+    if (hintsDoneRef.current.has(action)) return;
+    const next = new Set(hintsDoneRef.current).add(action);
+    hintsDoneRef.current = next;
+    saveHintsDone(next);
+    setHintsDone(next);
+  }, []);
+  const markRef = useRef(markHint);
+  /** 바로 전의 활동 (차 마시기나 책 읽기에서 일어났는지 알려고) */
+  const lastActivity = useRef(activity);
 
   useEffect(() => {
     startRef.current = onStartColoring;
@@ -69,15 +75,24 @@ export function Atelier3DScreen({ startSeated, onStartColoring }: Atelier3DScree
       view = new Atelier3DView(
         host,
         {
-          onActivityChange: setActivity,
+          onActivityChange: (next) => {
+            if (next === null && (lastActivity.current === 'tea' || lastActivity.current === 'read')) markRef.current('standUp');
+            lastActivity.current = next;
+            setActivity(next);
+          },
+          onControl: (kind) => markRef.current(kind),
           onEasel: () => {
+            markRef.current('pick');
             // 사진으로 만든 그림이 있으면 고르게 하고, 없으면 기본 그림을 바로 연다
             // 처음부터 들어 있는 그림과 사진으로 만든 그림 가운데 고른다
             listStoredPaintings()
               .catch(() => [])
               .then(setChoices);
           },
-          onContinuePainting: (id) => startRef.current(id),
+          onContinuePainting: (id) => {
+            markRef.current('continue');
+            startRef.current(id);
+          },
           onEaselPicture: setEaselPainting,
           onCamera: () => setPhotoOpen(true),
           onGalleryWall: () => setWallPickerOpen(true),
@@ -169,6 +184,8 @@ export function Atelier3DScreen({ startSeated, onStartColoring }: Atelier3DScree
     return () => window.clearTimeout(timer);
   }, [toast]);
 
+  const hints = hintItems({ activity, touch, easelPainting: easelPainting !== null }, hintsDone);
+
   return (
     <div className="atelier atelier3d" data-seated={activity === 'paint'} data-activity={activity ?? 'none'} data-touch={touch}>
       <div className="atelier__canvas" ref={hostRef} />
@@ -185,15 +202,13 @@ export function Atelier3DScreen({ startSeated, onStartColoring }: Atelier3DScree
         </p>
       )}
       {error && <p className="atelier__message">{error}</p>}
-      {!error && !wallSelected && (
-        <p className="atelier__hint">
-          {easelPainting && (activity === 'paint' || activity === null)
-            ? activity === 'paint'
-              ? '캔버스를 누르면 이어서 칠해요 · 이젤 표시로 다른 그림 고르기'
-              : `${touch ? HINTS.touch : HINTS.none} · 캔버스를 누르면 이어서 칠해요`
-            : activity === null && touch
-              ? HINTS.touch
-              : HINTS[activity ?? 'none']}
+      {!error && !wallSelected && hints.length > 0 && (
+        <p className="atelier__hint" data-testid="atelier-hint">
+          {hints.map((h) => (
+            <span key={h.action} className="atelier__hint-item">
+              {h.text}
+            </span>
+          ))}
         </p>
       )}
       {wallSelected && (
