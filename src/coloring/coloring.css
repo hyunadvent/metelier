@@ -325,6 +325,8 @@
 
 .reference {
   position: absolute;
+  /* 붓보다 위에 보인다 */
+  z-index: 5;
   top: 76px;
   right: 16px;
   width: min(240px, 42vw);
@@ -349,6 +351,7 @@
 
 .settings {
   position: absolute;
+  z-index: 5;
   top: 76px;
   right: 16px;
   display: grid;
@@ -581,4 +584,33 @@
 
 .brush[data-painting='true'] .brush__tuft {
   transform: scale(0.94, 1.08);
+}
+
+/* 손잡이 끝의 방향 바꾸기 화살표 */
+.brush__flip {
+  pointer-events: all;
+  touch-action: none;
+  cursor: pointer;
+}
+
+.brush__flip-hit {
+  fill: transparent;
+}
+
+.brush__flip-face {
+  fill: #fffaf2;
+  stroke: #7a4a25;
+  stroke-width: 2;
+}
+
+.brush__flip-arrow {
+  fill: none;
+  stroke: #7a4a25;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.brush__flip:hover .brush__flip-face {
+  fill: #fbe3c0;
 }

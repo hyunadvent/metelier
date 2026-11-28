@@ -315,9 +315,6 @@ export function ColoringScreen({ paintingId, backdrop, onExit }: ColoringScreenP
               <button aria-label="축소" disabled={zoom <= 1} onClick={() => view.zoomBy(1 / ZOOM_STEP)}>
                 −
               </button>
-              <button className="segmented__value" aria-label="화면에 맞추기" onClick={() => view.resetZoom()}>
-                {Math.round(zoom * 100)}%
-              </button>
               <button aria-label="확대" disabled={zoom >= 5} onClick={() => view.zoomBy(ZOOM_STEP)}>
                 +
               </button>

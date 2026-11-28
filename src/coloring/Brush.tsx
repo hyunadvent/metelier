@@ -12,6 +12,25 @@ const HANDLE_REACH = { x: 230, y: 160 };
 
 type Mode = 'idle' | 'move' | 'paint';
 
+/** 붓을 반대로 기울였는지 (왼손잡이 등). 이 기기에 기억한다. */
+const FLIP_KEY = 'metelier.brushFlip';
+function loadFlip(): boolean {
+  try {
+    return localStorage.getItem(FLIP_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+function saveFlip(flip: boolean): void {
+  try {
+    localStorage.setItem(FLIP_KEY, flip ? '1' : '0');
+  } catch {
+    // 저장이 안 되는 브라우저면 이번에만
+  }
+}
+/** 붓의 모양 변환: 기울기, 반대로 기울였으면 좌우를 뒤집는다 (붓 끝을 기준으로) */
+const bodyTransform = (angle: number, flip: boolean) => (flip ? `scale(-1 1) rotate(${angle})` : `rotate(${angle})`);
+
 /** 붓털 모양: 평소, 그리고 종이에 대고 칠할 때 (붓 끝이 아래로 꺾여 눌린다) */
 const TUFT = {
   rest: 'M -14 0 C -6 -9, 14 -13, 42 -12 L 42 12 C 14 13, -6 9, -14 0 Z',
@@ -56,6 +75,8 @@ interface BrushProps {
 export function Brush({ view, palette, tool, onDip, onEmptyStroke, onPaint, cue = null }: BrushProps) {
   const rootRef = useRef<SVGSVGElement>(null);
   const bodyRef = useRef<SVGGElement>(null);
+  const flipRef = useRef(loadFlip());
+  const angleRef = useRef(ANGLE);
   const pos = useRef({ x: 0, y: 0 });
   const drag = useRef({ mode: 'idle' as Mode, pointerId: -1, dx: 0, dy: 0, stroking: false });
   const pots = useRef<Pot[]>([]);
@@ -94,7 +115,12 @@ export function Brush({ view, palette, tool, onDip, onEmptyStroke, onPaint, cue 
   useEffect(() => {
     // 처음에는 그림 오른쪽 위에 놓아 둔다. 좁은 화면에서도 손잡이가 화면 안에 들어오게 한다.
     const place = () =>
-      moveTo(Math.min(window.innerWidth * 0.74, window.innerWidth - HANDLE_REACH.x), Math.max(window.innerHeight * 0.3, HANDLE_REACH.y));
+      moveTo(
+        flipRef.current
+          ? Math.max(window.innerWidth * 0.26, HANDLE_REACH.x)
+          : Math.min(window.innerWidth * 0.74, window.innerWidth - HANDLE_REACH.x),
+        Math.max(window.innerHeight * 0.3, HANDLE_REACH.y),
+      );
     let size = { w: window.innerWidth, h: window.innerHeight };
     place();
     // 창 크기가 바뀌면 화면에서의 상대 위치를 유지한다.
@@ -109,7 +135,21 @@ export function Brush({ view, palette, tool, onDip, onEmptyStroke, onPaint, cue 
   }, [moveTo]);
 
   const setAngle = (angle: number) => {
-    bodyRef.current?.setAttribute('transform', `rotate(${angle})`);
+    angleRef.current = angle;
+    bodyRef.current?.setAttribute('transform', bodyTransform(angle, flipRef.current));
+  };
+
+  /** 손잡이 끝의 화살표: 붓을 반대 방향으로 기울인다 */
+  const onFlip = (e: React.PointerEvent<SVGElement>) => {
+    if (drag.current.mode !== 'idle' || (e.pointerType === 'mouse' && e.button !== 0)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    flipRef.current = !flipRef.current;
+    saveFlip(flipRef.current);
+    setAngle(angleRef.current);
+    // 뒤집은 손잡이가 화면 밖으로 나가면 붓을 안으로 들인다
+    const { x, y } = pos.current;
+    moveTo(flipRef.current ? Math.max(x, HANDLE_REACH.x) : Math.min(x, window.innerWidth - HANDLE_REACH.x), Math.max(y, HANDLE_REACH.y));
   };
 
   const readPots = () => {
@@ -224,7 +264,7 @@ export function Brush({ view, palette, tool, onDip, onEmptyStroke, onPaint, cue 
 
   return (
     <svg ref={rootRef} className="brush" width="1" height="1" aria-hidden="true" data-cue={cue ?? undefined}>
-      <g ref={bodyRef} transform={`rotate(${ANGLE})`}>
+      <g ref={bodyRef} transform={bodyTransform(ANGLE, flipRef.current)}>
         {/* 손잡이 */}
         <path d="M 70 -11 L 250 -5 Q 259 0 250 5 L 70 11 Z" fill="#b5713c" stroke="#7a4a25" strokeWidth="2" />
         <path d="M 78 -6 L 240 -2" stroke="#d99a63" strokeWidth="3" strokeLinecap="round" />
@@ -253,6 +293,13 @@ export function Brush({ view, palette, tool, onDip, onEmptyStroke, onPaint, cue 
         {/* 잡는 영역: 손잡이(이동) 위에 붓털(칠하기)을 겹쳐 둔다 */}
         <rect className="brush__handle" x="52" y="-26" width="212" height="52" rx="26" {...handlers('move')} />
         <ellipse className="brush__bristle" cx="18" cy="0" rx="38" ry="30" {...handlers('paint')} />
+
+        {/* 손잡이 끝의 양쪽 화살표: 누르면 붓이 반대 방향으로 기울어진다 */}
+        <g className="brush__flip" transform="translate(278 0)" onPointerDown={onFlip} aria-label="붓 방향 바꾸기">
+          <circle className="brush__flip-hit" r="20" />
+          <circle className="brush__flip-face" r="12" />
+          <path className="brush__flip-arrow" d="M -6 0 H 6 M -6 0 l 3.5 -3.5 M -6 0 l 3.5 3.5 M 6 0 l -3.5 -3.5 M 6 0 l -3.5 3.5" />
+        </g>
       </g>
     </svg>
   );
