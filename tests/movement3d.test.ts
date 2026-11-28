@@ -4,6 +4,7 @@ import {
   clampDestination,
   fovForAspect,
   stickFrom,
+  startsPinch,
   distanceInsideBox,
   isOnCharacter,
   JUMP_GRAVITY,
@@ -162,6 +163,13 @@ describe('터치 조작', () => {
 
   it('아주 조금 끈 것은 움직이지 않는다', () => {
     expect(stickFrom({ x: 0, y: 0 }, { x: 3, y: 2 }, 56)).toEqual({ x: 0, y: 0 });
+  });
+
+  it('두 손가락이 거의 함께 닿을 때만 확대·축소를 시작한다', () => {
+    expect(startsPinch({ downAt: 1000, moved: false }, 1120)).toBe(true);
+    // 걷던 중에 다른 손가락이 닿음: 따로 둘러보기
+    expect(startsPinch({ downAt: 1000, moved: false }, 1800)).toBe(false);
+    expect(startsPinch({ downAt: 1000, moved: true }, 1100)).toBe(false);
   });
 
   it('가로 화면은 기본 시야각을, 세로로 긴 화면은 넓힌 시야각을 쓴다', () => {

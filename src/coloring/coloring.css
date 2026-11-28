@@ -134,6 +134,8 @@
   top: 0;
   overflow: visible;
   pointer-events: none;
+  /* 휴대폰: 붓을 끌 때 브라우저가 화면을 밀거나 확대하지 않게 (SVG 안쪽 요소의 touch-action 은 무시하는 브라우저가 있다) */
+  touch-action: none;
   filter: drop-shadow(0 4px 3px rgb(91 70 54 / 30%));
 }
 
@@ -207,6 +209,30 @@
 
 .pot--eraser {
   background: #fffaf2;
+}
+
+/* 필요한 곳을 모두 칠한 물감: 번호 대신 체크, 살짝 흐리게 */
+.pot--done {
+  position: relative;
+  opacity: 0.72;
+}
+
+.pot--done::after {
+  content: '✓';
+  position: absolute;
+  right: -6px;
+  top: -6px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: #5fae5a;
+  border: 2px solid #fffaf2;
+  color: #fffaf2;
+  font-size: 14px;
+  font-weight: 900;
+  line-height: 1;
 }
 
 .pot--selected {

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { AtelierLayout } from '../atelier/scene';
 import { EaselBackdrop, type ScreenRect } from '../atelier3d/EaselBackdrop';
 import { Brush } from './Brush';
@@ -55,6 +55,9 @@ export function ColoringScreen({ paintingId, backdrop, onExit }: ColoringScreenP
   const [artworkUrl, setArtworkUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const meta: PaintingMeta | null = painting?.meta ?? null;
+  /** 필요한 곳을 모두 칠한 물감 번호 (칠한 칸 수가 바뀔 때마다 다시 센다) */
+  const filledCount = progress.filled;
+  const done = useMemo(() => (view && filledCount >= 0 ? view.finishedColors() : new Set<number>()), [view, filledCount]);
 
   // ── 3D 화실 배경 (이젤 앞 시점) ────────────────────
   useEffect(() => {
@@ -354,10 +357,11 @@ export function ColoringScreen({ paintingId, backdrop, onExit }: ColoringScreenP
             {meta.palette.map((p) => (
               <div
                 key={p.number}
-                className={`pot${tool === p.number ? ' pot--selected' : ''}${settings.tapToPick ? ' pot--tappable' : ''}`}
+                className={`pot${tool === p.number ? ' pot--selected' : ''}${settings.tapToPick ? ' pot--tappable' : ''}${done.has(p.number) ? ' pot--done' : ''}`}
                 style={{ background: p.color }}
                 data-pot={p.number}
-                aria-label={`${p.number}번 물감`}
+                aria-label={`${p.number}번 물감${done.has(p.number) ? ' (다 칠했어요)' : ''}`}
+                title={done.has(p.number) ? '이 색은 다 칠했어요' : undefined}
                 onClick={settings.tapToPick ? () => pickTool(p.number) : undefined}
               >
                 {p.number}

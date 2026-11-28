@@ -19,6 +19,7 @@ import {
   clampDestination,
   fovForAspect,
   stickFrom,
+  startsPinch,
   type Stick,
   distanceInsideBox,
   isOnCharacter,
@@ -148,14 +149,16 @@ export class Atelier3DView {
   private drag: { id: number; x: number; y: number; moved: boolean } | null = null;
   /**
    * 터치: 손가락마다 하는 일. 화면 왼쪽을 누르면 걷기(조이스틱), 오른쪽을 누르면 둘러보기.
-   * 두 손가락이면 벌리고 오므려 확대·축소한다.
+   * 왼손으로 걸으면서 오른손으로 둘러볼 수 있다.
+   * 두 손가락이 거의 함께 닿았을 때만 벌리고 오므려 확대·축소한다.
+   * idle: 아무것도 하지 않는 손가락 (같은 쪽에 이미 다른 손가락이 있거나, 확대·축소가 끝나고 남은 손가락).
    */
   private readonly touches = new Map<
     number,
-    { role: 'move' | 'look'; startX: number; startY: number; x: number; y: number; moved: boolean }
+    { role: 'move' | 'look' | 'idle'; startX: number; startY: number; x: number; y: number; moved: boolean; downAt: number }
   >();
-  /** 두 손가락 사이의 거리 (확대·축소 중이 아니면 null) */
-  private pinch: number | null = null;
+  /** 확대·축소 중인 두 손가락과 그 사이의 거리 (확대·축소 중이 아니면 null) */
+  private pinch: { a: number; b: number; distance: number } | null = null;
   /** 가상 조이스틱의 기울기 (걷는 중이 아니면 null) */
   private stick: Stick | null = null;
   private readonly stickBase = document.createElement('div');
@@ -620,17 +623,21 @@ export class Atelier3DView {
 
   private touchDown(e: PointerEvent): void {
     const rect = this.renderer.domElement.getBoundingClientRect();
-    const role = e.clientX - rect.left < rect.width / 2 ? 'move' : 'look';
-    this.touches.set(e.pointerId, { role, startX: e.clientX, startY: e.clientY, x: e.clientX, y: e.clientY, moved: false });
+    const now = performance.now();
+    const others = [...this.touches.entries()];
+    let role: 'move' | 'look' | 'idle' = e.clientX - rect.left < rect.width / 2 ? 'move' : 'look';
+    // 확대·축소 중이거나, 같은 쪽에서 이미 다른 손가락이 그 일을 하고 있으면 이 손가락은 쉰다
+    if (this.pinch || others.some(([, o]) => o.role === role)) role = 'idle';
+    this.touches.set(e.pointerId, { role, startX: e.clientX, startY: e.clientY, x: e.clientX, y: e.clientY, moved: false, downAt: now });
     try {
       this.renderer.domElement.setPointerCapture(e.pointerId);
     } catch {
       // 캡처가 안 되는 포인터여도 계속한다.
     }
-    if (this.touches.size === 2) {
-      // 두 손가락: 걷기와 둘러보기를 멈추고 확대·축소한다
-      const [a, b] = [...this.touches.values()];
-      this.pinch = Math.hypot(a.x - b.x, a.y - b.y);
+    // 두 손가락이 거의 함께 닿았다: 걷기와 둘러보기 대신 확대·축소한다
+    if (!this.pinch && others.length === 1 && startsPinch(others[0][1], now)) {
+      const [otherId, other] = others[0];
+      this.pinch = { a: otherId, b: e.pointerId, distance: Math.hypot(other.x - e.clientX, other.y - e.clientY) };
       this.endStick();
     }
   }
@@ -644,17 +651,21 @@ export class Atelier3DView {
     t.y = e.clientY;
     if (!t.moved && Math.hypot(t.x - t.startX, t.y - t.startY) < DRAG_THRESHOLD) return true;
     t.moved = true;
-    if (this.pinch !== null) {
-      if (this.touches.size < 2) return true;
-      const [a, b] = [...this.touches.values()];
+    const pinch = this.pinch;
+    if (pinch) {
+      if (e.pointerId !== pinch.a && e.pointerId !== pinch.b) return true;
+      const a = this.touches.get(pinch.a);
+      const b = this.touches.get(pinch.b);
+      if (!a || !b) return true;
       const now = Math.hypot(a.x - b.x, a.y - b.y);
-      if (now > 0 && this.pinch > 0) {
+      if (now > 0 && pinch.distance > 0) {
         this.cameraGoal = null;
-        this.distance = Math.min(CAMERA.maxDistance, Math.max(CAMERA.minDistance, this.distance * (this.pinch / now)));
+        this.distance = Math.min(CAMERA.maxDistance, Math.max(CAMERA.minDistance, this.distance * (pinch.distance / now)));
       }
-      this.pinch = now;
+      pinch.distance = now;
       return true;
     }
+    if (t.role === 'idle') return true;
     if (t.role === 'look') {
       this.cameraGoal = null;
       this.azimuth -= dx * TOUCH_LOOK.azimuth;
@@ -670,11 +681,20 @@ export class Atelier3DView {
     const t = this.touches.get(e.pointerId);
     if (!t) return false;
     this.touches.delete(e.pointerId);
-    const wasPinch = this.pinch !== null;
-    if (this.touches.size < 2) this.pinch = null;
+    const wasPinch = this.endPinchFor(e.pointerId);
     if (t.role === 'move') this.endStick();
     // 끌지 않고 톡 누른 것: 마우스로 누른 것과 같다 (캔버스, 캐릭터 점프, 바닥으로 걷기)
-    if (!t.moved && !wasPinch && this.touches.size === 0) this.tapAt(e.clientX, e.clientY);
+    if (!t.moved && !wasPinch && t.role !== 'idle' && this.touches.size === 0) this.tapAt(e.clientX, e.clientY);
+    return true;
+  }
+
+  /** 확대·축소하던 손가락이 떨어지면 확대·축소를 끝내고, 남은 손가락은 쉬게 한다. 그 손가락이 확대·축소 중이었는가 */
+  private endPinchFor(pointerId: number): boolean {
+    const pinch = this.pinch;
+    if (!pinch || (pointerId !== pinch.a && pointerId !== pinch.b)) return false;
+    this.pinch = null;
+    const rest = this.touches.get(pointerId === pinch.a ? pinch.b : pinch.a);
+    if (rest) rest.role = 'idle';
     return true;
   }
 
@@ -765,9 +785,10 @@ export class Atelier3DView {
 
   private onPointerCancel = (e?: PointerEvent): void => {
     if (e?.pointerType === 'touch') {
+      const t = this.touches.get(e.pointerId);
       this.touches.delete(e.pointerId);
-      if (this.touches.size < 2) this.pinch = null;
-      this.endStick();
+      this.endPinchFor(e.pointerId);
+      if (t?.role === 'move') this.endStick();
     }
     this.drag = null;
     if (this.pictureDrag?.moved) {

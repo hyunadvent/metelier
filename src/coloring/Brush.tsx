@@ -7,6 +7,8 @@ const ANGLE = -35;
 const PAINTING_ANGLE = -29;
 const CLEAN_BRISTLE = '#ecd9b6';
 const EDGE = 8;
+/** 붓의 기준점에서 손잡이 끝까지의 거리 (오른쪽, 위쪽). 처음 놓을 때 손잡이가 화면 밖으로 나가지 않게 한다. */
+const HANDLE_REACH = { x: 230, y: 160 };
 
 type Mode = 'idle' | 'move' | 'paint';
 
@@ -49,9 +51,26 @@ export function Brush({ view, palette, tool, onDip, onEmptyStroke }: BrushProps)
     if (rootRef.current) rootRef.current.style.transform = `translate(${nx}px, ${ny}px)`;
   }, []);
 
+  // 휴대폰: 붓을 누른 손가락으로 브라우저가 화면을 밀거나 확대하면 포인터가 취소되어 붓이 따라오지 않는다.
+  // touch-action 만으로는 막히지 않는 브라우저(iOS Safari 등)가 있어 터치를 직접 막는다.
   useEffect(() => {
-    // 처음에는 그림 오른쪽 위에 놓아 둔다.
-    const place = () => moveTo(window.innerWidth * 0.74, window.innerHeight * 0.3);
+    const root = rootRef.current;
+    if (!root) return;
+    const block = (e: TouchEvent) => {
+      if (e.cancelable) e.preventDefault();
+    };
+    root.addEventListener('touchstart', block, { passive: false });
+    root.addEventListener('touchmove', block, { passive: false });
+    return () => {
+      root.removeEventListener('touchstart', block);
+      root.removeEventListener('touchmove', block);
+    };
+  }, []);
+
+  useEffect(() => {
+    // 처음에는 그림 오른쪽 위에 놓아 둔다. 좁은 화면에서도 손잡이가 화면 안에 들어오게 한다.
+    const place = () =>
+      moveTo(Math.min(window.innerWidth * 0.74, window.innerWidth - HANDLE_REACH.x), Math.max(window.innerHeight * 0.3, HANDLE_REACH.y));
     let size = { w: window.innerWidth, h: window.innerHeight };
     place();
     // 창 크기가 바뀌면 화면에서의 상대 위치를 유지한다.

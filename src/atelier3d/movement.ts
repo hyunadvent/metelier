@@ -158,6 +158,18 @@ export interface Stick {
   y: number;
 }
 
+/** 두 손가락이 이만큼 안에 함께 닿아야 확대·축소로 본다 (밀리초) */
+export const PINCH_WINDOW_MS = 250;
+
+/**
+ * 두 번째 손가락이 닿았을 때 확대·축소를 시작하는가.
+ * 첫 손가락이 방금 닿았고 아직 끌지 않았을 때만 그렇다. 걷거나 둘러보던 중에 다른 손가락이 닿으면
+ * 그 손가락은 제 몫(걷기, 둘러보기)을 따로 한다.
+ */
+export function startsPinch(first: { downAt: number; moved: boolean }, secondDownAt: number, windowMs = PINCH_WINDOW_MS): boolean {
+  return !first.moved && secondDownAt - first.downAt <= windowMs;
+}
+
 /**
  * 누른 곳(start)에서 손가락(now)까지 끈 만큼의 조이스틱 기울기.
  * 반지름보다 멀리 끌어도 길이는 1 이고, 아주 조금 끈 것(dead zone)은 0 으로 본다.

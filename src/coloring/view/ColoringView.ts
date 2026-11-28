@@ -3,6 +3,7 @@ import { createAtelierScene } from '../../atelier/AtelierScene';
 import { easelPlacement } from '../../atelier/geometry';
 import type { AtelierLayout } from '../../atelier/scene';
 import { PaintEngine, type Brush } from '../engine/PaintEngine';
+import { finishedColors } from '../finishedColors';
 import { hexToRgb, type LoadedPainting } from '../painting';
 import { clampPlacement, clampZoom, fitScale, scaleAround, type Placement, type Rect } from './viewport';
 
@@ -473,6 +474,12 @@ export class ColoringView {
 
   private updateLabels(): void {
     for (const [id, label] of this.labels) label.visible = this.labelsVisible && !this.engine.isFilled(id);
+  }
+
+  /** 필요한 곳을 모두 칠한 물감 번호 */
+  finishedColors(): Set<number> {
+    const e = this.engine;
+    return finishedColors(this.painting.meta.regions, (id) => e.regionSize[id] ?? 0, (id) => e.isFilled(id));
   }
 
   private reportProgress(): void {
