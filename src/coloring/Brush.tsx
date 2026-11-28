@@ -184,6 +184,28 @@ export function Brush({ view, palette, tool, onDip, onEmptyStroke, onPaint, cue 
     );
   };
 
+  /** 붓끝 아래에 물감이 있는가 */
+  const potUnderTip = () => {
+    const { x, y } = pos.current;
+    return pots.current.some((p) => Math.hypot(p.x - x, p.y - y) <= p.r);
+  };
+
+  /**
+   * 칠하던 붓끝이 물감 위로 왔다: 칠하기를 마치고, 붓을 옮기는 것으로 바꿔 그 물감을 묻힌다.
+   * (손잡이로 옮기든 붓끝으로 칠하다 오든 물감 위에서는 색이 바뀐다)
+   */
+  const finishPaintingIntoPot = () => {
+    const d = drag.current;
+    if (d.stroking) view.endStroke();
+    d.stroking = false;
+    d.mode = 'move';
+    setAngle(ANGLE);
+    rootRef.current?.removeAttribute('data-painting');
+    pressTuft(false);
+    insidePot.current = null;
+    checkDip();
+  };
+
   const onPointerDown = (mode: 'move' | 'paint') => (e: React.PointerEvent<SVGElement>) => {
     if (drag.current.mode !== 'idle' || (e.pointerType === 'mouse' && e.button !== 0)) return;
     e.preventDefault();
@@ -204,6 +226,14 @@ export function Brush({ view, palette, tool, onDip, onEmptyStroke, onPaint, cue 
     if (mode === 'move') {
       readPots();
       insidePot.current = null;
+      return;
+    }
+    readPots();
+    if (potUnderTip()) {
+      // 물감 위에 놓인 붓끝을 잡았다: 칠하지 않고 물감을 묻힌 채 옮긴다
+      drag.current.mode = 'move';
+      insidePot.current = null;
+      checkDip();
       return;
     }
     setAngle(PAINTING_ANGLE);
@@ -233,6 +263,11 @@ export function Brush({ view, palette, tool, onDip, onEmptyStroke, onPaint, cue 
     const samples = coalesced.length ? coalesced : [e.nativeEvent];
     for (const s of samples) {
       moveTo(s.clientX + d.dx, s.clientY + d.dy);
+      if (potUnderTip()) {
+        if (d.stroking) view.commitStroke();
+        finishPaintingIntoPot();
+        return;
+      }
       if (tool === null) continue;
       const { x, y } = pos.current;
       // 칸 밖에서 누르기 시작했다면, 처음 들어간 칸에 고정된다.
@@ -248,10 +283,6 @@ export function Brush({ view, palette, tool, onDip, onEmptyStroke, onPaint, cue 
     if (d.mode === 'paint') {
       view.endStroke();
       setAngle(ANGLE);
-      // 칠하던 붓끝을 물감 위에 놓고 떼면, 칠하기를 마친 뒤 그 물감을 묻힌다
-      readPots();
-      insidePot.current = null;
-      checkDip();
     }
     drag.current = { mode: 'idle', pointerId: -1, dx: 0, dy: 0, stroking: false };
     rootRef.current?.removeAttribute('data-dragging');
