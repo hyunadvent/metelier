@@ -385,10 +385,13 @@ export class Atelier3DView {
     this.events.onActivityChange(null);
   }
 
-  /** 활동 자리로 걸어가서 앉는다. */
-  private goSit(activity: Activity): void {
+  /** 활동 자리로 걸어가서 앉는다. then 은 앉은 뒤에 이어서 할 일 */
+  private goSit(activity: Activity, then?: () => void): void {
     if (this.activity === activity) return;
-    this.walkTo(this.room.seats[activity].approach, () => this.sitDown(activity));
+    this.walkTo(this.room.seats[activity].approach, () => {
+      this.sitDown(activity);
+      then?.();
+    });
   }
 
   private onHotspot(hotspot: Hotspot3D): void {
@@ -398,9 +401,9 @@ export class Atelier3DView {
     }
     switch (hotspot.id) {
       case 'easel':
-        // 의자에 앉아 있으면 색칠을 시작하고, 아니면 먼저 의자로 가서 앉는다.
+        // 의자에 앉아 있으면 바로, 아니면 의자로 가서 앉은 뒤 색칠을 시작한다.
         if (this.activity === 'paint') this.events.onEasel();
-        else this.goSit('paint');
+        else this.goSit('paint', () => this.events.onEasel());
         break;
       case 'stool':
         this.goSit('paint');
