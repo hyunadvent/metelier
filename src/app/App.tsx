@@ -42,7 +42,7 @@ export function App() {
   // 뒤로 가기: 화실에서는 정말 나갈지 묻고, 색칠 중에는 무시한다 (실수로 그림을 그리다 나가지 않게)
   const { leave } = useBackGuard(() => {
     if (screen === 'atelier') setConfirmLeave(true);
-  });
+  }, screen === 'coloring');
   const leaveDialog = confirmLeave && screen === 'atelier' && (
     <ConfirmDialog
       title="정말 나가시겠어요?"
