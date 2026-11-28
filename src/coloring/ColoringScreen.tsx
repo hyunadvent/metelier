@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { AtelierLayout } from '../atelier/scene';
 import { EaselBackdrop, type ScreenRect } from '../atelier3d/EaselBackdrop';
 import { Brush } from './Brush';
+import { useHintsDone } from '../app/useHintsDone';
 import { CompleteDialog, ConfirmDialog, GalleryDialog } from './dialogs';
 import { hexToRgb, loadPainting, type LoadedPainting, type PaintingMeta, type Tool } from './painting';
 import { restoreSession, saveSession } from './persistence';
@@ -55,6 +56,8 @@ export function ColoringScreen({ paintingId, backdrop, onExit }: ColoringScreenP
   const [artworkUrl, setArtworkUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const meta: PaintingMeta | null = painting?.meta ?? null;
+  /** 붓 다루는 법을 해 봤는가. 로그인하지 않았으면 접속할 때마다 다시 알려 준다. */
+  const [hintsDone, markHint] = useHintsDone();
   /** 필요한 곳을 모두 칠한 물감 번호 (칠한 칸 수가 바뀔 때마다 다시 센다) */
   const filledCount = progress.filled;
   const done = useMemo(() => (view && filledCount >= 0 ? view.finishedColors() : new Set<number>()), [view, filledCount]);
@@ -208,10 +211,21 @@ export function ColoringScreen({ paintingId, backdrop, onExit }: ColoringScreenP
     saveSettings(settings);
   }, [settings, view]);
 
-  const pickTool = useCallback((next: Tool) => {
-    setTool(next);
-    sound.dip();
-  }, []);
+  const pickTool = useCallback(
+    (next: Tool) => {
+      setTool(next);
+      sound.dip();
+      if (next !== 'eraser') markHint('dip');
+    },
+    [markHint],
+  );
+  const onPaint = useCallback(() => {
+    if (tool !== 'eraser') markHint('paint');
+  }, [tool, markHint]);
+
+  /** 붓 안내: 먼저 손잡이를 잡아 물감에 담그고, 그다음 붓 끝으로 칠한다 */
+  const brushCue: 'handle' | 'tip' | null =
+    tool === null ? (hintsDone.has('dip') ? null : 'handle') : tool !== 'eraser' && !hintsDone.has('paint') ? 'tip' : null;
 
   const shakePalette = useCallback(() => {
     paletteRef.current?.animate(
@@ -287,6 +301,8 @@ export function ColoringScreen({ paintingId, backdrop, onExit }: ColoringScreenP
             </div>
             <div className="pill pill--title">{meta.title}</div>
             <span className="coloring__spacer" />
+            {/* 휴대폰 세로 화면에서 되돌리기·확대를 아랫줄로 내리는 줄바꿈 */}
+            <span className="coloring__break" />
             <div className="segmented" role="group" aria-label="되돌리기">
               <button aria-label="되돌리기" disabled={!history.undo} onClick={() => view.undo()}>
                 ↶
@@ -351,7 +367,8 @@ export function ColoringScreen({ paintingId, backdrop, onExit }: ColoringScreenP
             </div>
           )}
 
-          {tool === null && <p className="coloring__hint">붓 손잡이를 잡고 물감에 붓끝을 담가 보세요</p>}
+          {brushCue === 'handle' && <p className="coloring__hint">반짝이는 붓 손잡이를 잡고 물감에 붓끝을 담가 보세요</p>}
+          {brushCue === 'tip' && <p className="coloring__hint">원하는 칸에 붓 끝을 대고 끌어서 색을 칠해요</p>}
 
           <footer className="palette" ref={paletteRef} aria-label="물감">
             {meta.palette.map((p) => (
@@ -378,7 +395,7 @@ export function ColoringScreen({ paintingId, backdrop, onExit }: ColoringScreenP
             </div>
           </footer>
 
-          <Brush view={view} palette={meta.palette} tool={tool} onDip={pickTool} onEmptyStroke={shakePalette} />
+          <Brush view={view} palette={meta.palette} tool={tool} onDip={pickTool} onEmptyStroke={shakePalette} onPaint={onPaint} cue={brushCue} />
 
           {dialog === 'complete' && (
             <CompleteDialog artworkUrl={artworkUrl} onClose={closeDialog} onGallery={() => setDialog('gallery')} />

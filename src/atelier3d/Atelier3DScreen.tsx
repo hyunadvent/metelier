@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Atelier3DView } from './Atelier3DView';
 import { FRAME_INFO, FRAME_KINDS, loadDecor, MAX_WALL_PICTURES, PLANT_INFO, PLANT_KINDS, saveDecor, type PlantKind, type PlantSlot } from './decor';
 import { WallPicker } from './WallPicker';
@@ -7,7 +7,8 @@ import { onRemoteApplied } from '../storage/changes';
 import { useSync } from '../sync/SyncContext';
 import { isTouchDevice } from '../app/device';
 import type { Activity } from './room';
-import { hintItems, loadHintsDone, saveHintsDone, type HintAction } from './hints';
+import { hintItems } from './hints';
+import { useHintsDone } from '../app/useHintsDone';
 import { PaintingPicker } from '../photo/PaintingPicker';
 import { PhotoDialog } from '../photo/PhotoDialog';
 import { listStoredPaintings, type StoredPaintingSummary } from '../storage/db';
@@ -49,16 +50,8 @@ export function Atelier3DScreen({ startSeated, onStartColoring }: Atelier3DScree
   /** 다른 기기에서 꾸민 것과 작품을 받아 오는 중 */
   const loadingSaved = syncStatus?.state === 'syncing' && (syncStatus.downloading ?? 0) > 0;
   const [error, setError] = useState<string | null>(null);
-  /** 안내 문구에서 이미 해 본 조작 (이 기기에 기억한다) */
-  const [hintsDone, setHintsDone] = useState(loadHintsDone);
-  const hintsDoneRef = useRef(hintsDone);
-  const markHint = useCallback((action: HintAction) => {
-    if (hintsDoneRef.current.has(action)) return;
-    const next = new Set(hintsDoneRef.current).add(action);
-    hintsDoneRef.current = next;
-    saveHintsDone(next);
-    setHintsDone(next);
-  }, []);
+  /** 안내 문구에서 이미 해 본 조작. 로그인하지 않았으면 접속할 때마다 처음부터 보여 준다. */
+  const [hintsDone, markHint] = useHintsDone();
   const markRef = useRef(markHint);
   /** 바로 전의 활동 (차 마시기나 책 읽기에서 일어났는지 알려고) */
   const lastActivity = useRef(activity);

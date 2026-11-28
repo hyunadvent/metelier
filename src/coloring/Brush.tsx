@@ -28,6 +28,13 @@ interface BrushProps {
   onDip(tool: Tool): void;
   /** 물감이 묻지 않은 붓으로 칠하려 했을 때. */
   onEmptyStroke(): void;
+  /** 붓 끝으로 칸을 칠하기 시작했을 때 */
+  onPaint?(): void;
+  /**
+   * 어디를 잡아야 하는지 깜빡여 알려 준다. handle: 손잡이(잡고 옮겨 물감에 담근다), tip: 붓 끝(대고 끌어 칠한다).
+   * 붓을 잡고 있는 동안에는 깜빡이지 않는다.
+   */
+  cue?: 'handle' | 'tip' | null;
 }
 
 /**
@@ -36,7 +43,7 @@ interface BrushProps {
  * - 붓털을 누르고 끌면 붓끝이 지나가는 자리가 칠해진다.
  * 붓의 위치는 붓털이 종이에 닿는 점(붓끝에서 조금 안쪽)을 기준으로 한다.
  */
-export function Brush({ view, palette, tool, onDip, onEmptyStroke }: BrushProps) {
+export function Brush({ view, palette, tool, onDip, onEmptyStroke, onPaint, cue = null }: BrushProps) {
   const rootRef = useRef<SVGSVGElement>(null);
   const bodyRef = useRef<SVGGElement>(null);
   const pos = useRef({ x: 0, y: 0 });
@@ -124,6 +131,7 @@ export function Brush({ view, palette, tool, onDip, onEmptyStroke }: BrushProps)
     } catch {
       // 캡처가 안 되는 포인터여도 계속한다.
     }
+    rootRef.current?.setAttribute('data-dragging', 'true');
     drag.current = {
       mode,
       pointerId: e.pointerId,
@@ -142,6 +150,7 @@ export function Brush({ view, palette, tool, onDip, onEmptyStroke }: BrushProps)
       return;
     }
     drag.current.stroking = view.beginStrokeAt(pos.current.x, pos.current.y);
+    if (drag.current.stroking) onPaint?.();
   };
 
   const onPointerMove = (e: React.PointerEvent<SVGElement>) => {
@@ -163,7 +172,7 @@ export function Brush({ view, palette, tool, onDip, onEmptyStroke }: BrushProps)
       const { x, y } = pos.current;
       // 칸 밖에서 누르기 시작했다면, 처음 들어간 칸에 고정된다.
       if (d.stroking) view.strokeToClient(x, y);
-      else d.stroking = view.beginStrokeAt(x, y);
+      else if ((d.stroking = view.beginStrokeAt(x, y))) onPaint?.();
     }
     view.commitStroke();
   };
@@ -176,6 +185,7 @@ export function Brush({ view, palette, tool, onDip, onEmptyStroke }: BrushProps)
       setAngle(ANGLE);
     }
     drag.current = { mode: 'idle', pointerId: -1, dx: 0, dy: 0, stroking: false };
+    rootRef.current?.removeAttribute('data-dragging');
   };
 
   const bristle =
@@ -191,7 +201,7 @@ export function Brush({ view, palette, tool, onDip, onEmptyStroke }: BrushProps)
   });
 
   return (
-    <svg ref={rootRef} className="brush" width="1" height="1" aria-hidden="true">
+    <svg ref={rootRef} className="brush" width="1" height="1" aria-hidden="true" data-cue={cue ?? undefined}>
       <g ref={bodyRef} transform={`rotate(${ANGLE})`}>
         {/* 손잡이 */}
         <path d="M 70 -11 L 250 -5 Q 259 0 250 5 L 70 11 Z" fill="#b5713c" stroke="#7a4a25" strokeWidth="2" />
@@ -209,6 +219,11 @@ export function Brush({ view, palette, tool, onDip, onEmptyStroke }: BrushProps)
           strokeDasharray={tool === 'eraser' ? '5 4' : undefined}
         />
         <path d="M 2 -3 C 14 -6, 26 -7, 38 -7" stroke="rgb(255 255 255 / 45%)" strokeWidth="2.5" strokeLinecap="round" fill="none" />
+
+        {/* 어디를 잡을지 알려 주는 깜빡임: 손잡이 테두리, 붓 끝(칠하는 점) */}
+        <rect className="brush__cue brush__cue--handle" x="66" y="-17" width="196" height="34" rx="17" />
+        <circle className="brush__cue brush__cue--tip" cx="0" cy="0" r="15" />
+        <circle className="brush__cue brush__cue--tip brush__cue--tip-dot" cx="0" cy="0" r="4" />
 
         {/* 잡는 영역: 손잡이(이동) 위에 붓털(칠하기)을 겹쳐 둔다 */}
         <rect className="brush__handle" x="52" y="-26" width="212" height="52" rx="26" {...handlers('move')} />

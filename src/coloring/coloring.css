@@ -270,6 +270,57 @@
   }
 }
 
+/* 휴대폰 세로 화면: 위쪽 HUD 를 두 줄로 (윗줄: 집·진행도·보기 버튼, 아랫줄: 되돌리기·확대) */
+.coloring__break {
+  display: none;
+}
+
+@media (max-width: 600px) and (orientation: portrait) {
+  .coloring__top {
+    top: 10px;
+    left: 10px;
+    right: 10px;
+    flex-wrap: wrap;
+    row-gap: 10px;
+  }
+  .coloring__break {
+    display: block;
+    order: 1;
+    flex-basis: 100%;
+    height: 0;
+  }
+  .coloring__top .segmented {
+    order: 2;
+  }
+  .coloring__top .segmented .segmented__value {
+    min-width: 64px;
+  }
+  .coloring__top .segmented button {
+    min-width: 48px;
+  }
+  .coloring .reference {
+    top: 124px;
+  }
+  .coloring .settings {
+    top: 124px;
+  }
+}
+
+/* 좁은 화면: 붓 안내가 화면 밖으로 나가지 않게 줄을 바꾼다 */
+@media (max-width: 600px) {
+  .coloring .coloring__hint {
+    bottom: 104px;
+    width: max-content;
+    max-width: calc(100% - 24px);
+    box-sizing: border-box;
+    white-space: normal;
+    word-break: keep-all;
+    text-align: center;
+    border-radius: 16px;
+    font-size: 14px;
+  }
+}
+
 /* ── 완성 예시, 설정 ───────────────────────────── */
 
 .reference {
@@ -475,5 +526,49 @@
 @media (prefers-reduced-motion: reduce) {
   .confetti {
     display: none;
+  }
+}
+
+/* ── 붓 안내: 어디를 잡을지 깜빡여 알려 준다 ─────────── */
+.brush__cue {
+  fill: none;
+  stroke: #ffd84d;
+  stroke-width: 5;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.brush__cue--tip-dot {
+  fill: #ffd84d;
+  stroke: #fffaf2;
+  stroke-width: 2;
+}
+
+.brush[data-cue='handle'] .brush__cue--handle,
+.brush[data-cue='tip'] .brush__cue--tip {
+  animation: brush-cue 0.9s ease-in-out infinite;
+}
+
+/* 붓을 잡고 있는 동안에는 깜빡이지 않는다 */
+.brush[data-dragging='true'] .brush__cue {
+  animation: none;
+  opacity: 0;
+}
+
+@keyframes brush-cue {
+  0%,
+  100% {
+    opacity: 0;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .brush[data-cue='handle'] .brush__cue--handle,
+  .brush[data-cue='tip'] .brush__cue--tip {
+    animation: none;
+    opacity: 0.9;
   }
 }

@@ -26,3 +26,26 @@ describe('화실 안내 문구', () => {
     expect(hintItems({ activity: 'read', touch: true, easelPainting: true }, new Set<HintAction>(['standUp']))).toEqual([]);
   });
 });
+
+describe('안내 기억', () => {
+  it('로그인하지 않으면 이번 접속에만 기억하고, 로그인하면 기기에 남긴다', async () => {
+    const store = new Map<string, string>();
+    (globalThis as { localStorage?: unknown }).localStorage = {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => void store.set(k, v),
+    };
+    const { loadHintsDone, markHintDone, resetSessionHints } = await import('../src/atelier3d/hints');
+    resetSessionHints();
+    markHintDone('walk', false);
+    expect(loadHintsDone(false).has('walk')).toBe(true);
+    expect(store.size).toBe(0);
+    // 다시 접속: 로그인하지 않았으면 처음부터
+    resetSessionHints();
+    expect(loadHintsDone(false).size).toBe(0);
+    markHintDone('dip', true);
+    resetSessionHints();
+    expect(loadHintsDone(true).has('dip')).toBe(true);
+    expect(loadHintsDone(false).has('dip')).toBe(false);
+    delete (globalThis as { localStorage?: unknown }).localStorage;
+  });
+});

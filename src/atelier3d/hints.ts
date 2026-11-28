@@ -1,7 +1,18 @@
 import type { Activity } from './room';
 
 /** 안내 문구에 나오는 조작. 한 번이라도 해 보면 그 안내는 다시 보이지 않는다. */
-export type HintAction = 'walk' | 'look' | 'zoom' | 'jump' | 'continue' | 'pick' | 'standUp';
+export type HintAction =
+  | 'walk'
+  | 'look'
+  | 'zoom'
+  | 'jump'
+  | 'continue'
+  | 'pick'
+  | 'standUp'
+  /** 색칠: 붓 손잡이를 잡고 물감에 담그기 */
+  | 'dip'
+  /** 색칠: 붓 끝으로 칸을 칠하기 */
+  | 'paint';
 
 export interface HintContext {
   activity: Activity | null;
@@ -56,19 +67,38 @@ export function hintItems({ activity, touch, easelPainting }: HintContext, done:
 
 const STORAGE_KEY = 'metelier.hintsDone';
 
-export function loadHintsDone(): Set<HintAction> {
+/**
+ * 이번 접속에서 해 본 조작. 로그인하지 않았으면 이것만 쓴다: 접속할 때마다 안내가 처음부터 나온다.
+ * 로그인했으면 이 기기에 저장한 것과 합친다.
+ */
+const sessionDone = new Set<HintAction>();
+
+function loadStored(): HintAction[] {
   try {
     const raw = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '[]');
-    return new Set(Array.isArray(raw) ? (raw as HintAction[]) : []);
+    return Array.isArray(raw) ? (raw as HintAction[]) : [];
   } catch {
-    return new Set();
+    return [];
   }
 }
 
-export function saveHintsDone(done: ReadonlySet<HintAction>): void {
+/** 이미 해 본 조작 */
+export function loadHintsDone(loggedIn: boolean): Set<HintAction> {
+  return new Set(loggedIn ? [...sessionDone, ...loadStored()] : sessionDone);
+}
+
+/** 조작을 해 봤다고 기억한다. 로그인했을 때만 다음 접속까지 남긴다. */
+export function markHintDone(action: HintAction, loggedIn: boolean): void {
+  sessionDone.add(action);
+  if (!loggedIn) return;
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify([...done]));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify([...new Set([...loadStored(), ...sessionDone])]));
   } catch {
-    // 저장이 안 되는 브라우저(사생활 보호 창 등)면 이번에만 기억한다.
+    // 저장이 안 되는 브라우저(사생활 보호 창 등)면 이번 접속에서만 기억한다.
   }
+}
+
+/** 시험용: 이번 접속에서 기억한 것을 지운다 */
+export function resetSessionHints(): void {
+  sessionDone.clear();
 }

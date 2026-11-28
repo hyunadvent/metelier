@@ -299,11 +299,15 @@ export class ColoringView {
 
   private avail(): Rect {
     const { width, height } = this.app.screen;
+    // 휴대폰 세로 화면: 위쪽 HUD 가 두 줄이 되고(coloring.css), 양옆 여백은 줄인다
+    const portraitPhone = width <= 600 && height > width;
+    const top = portraitPhone ? 124 : MARGIN.top;
+    const side = portraitPhone ? 10 : MARGIN.left;
     return {
-      left: MARGIN.left,
-      top: MARGIN.top,
-      right: Math.max(MARGIN.left + 1, width - MARGIN.right),
-      bottom: Math.max(MARGIN.top + 1, height - MARGIN.bottom),
+      left: side,
+      top,
+      right: Math.max(side + 1, width - side),
+      bottom: Math.max(top + 1, height - MARGIN.bottom),
     };
   }
 
