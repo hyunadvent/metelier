@@ -20,9 +20,10 @@ const STAGE_ORDER: (PhotoStage | 'read' | 'pack')[] = ['read', 'smooth', 'colors
 
 /** 그림의 난이도: 칸과 색이 많을수록 원본에 가깝지만 칠하기 어렵다. */
 export const PHOTO_LEVELS = {
-  easy: { label: '쉽게', colors: 10, maxRegions: 80 },
-  normal: { label: '보통', colors: DEFAULT_PHOTO_OPTIONS.colors, maxRegions: DEFAULT_PHOTO_OPTIONS.maxRegions },
-  fine: { label: '세밀하게', colors: 18, maxRegions: 260 },
+  // narrowStrip: 이 폭(긴 변에 대한 비율, 절반 폭)보다 좁은 띠는 선 한 줄로 합친다. 쉬울수록 넓은 띠까지 합친다.
+  easy: { label: '쉽게', colors: 10, maxRegions: 80, narrowStrip: 1 / 95 },
+  normal: { label: '보통', colors: DEFAULT_PHOTO_OPTIONS.colors, maxRegions: DEFAULT_PHOTO_OPTIONS.maxRegions, narrowStrip: DEFAULT_PHOTO_OPTIONS.narrowStrip },
+  fine: { label: '세밀하게', colors: 18, maxRegions: 260, narrowStrip: 1 / 260 },
 } as const;
 export type PhotoLevel = keyof typeof PHOTO_LEVELS;
 
@@ -70,8 +71,8 @@ export function PhotoDialog({ onClose, onSaved }: PhotoDialogProps) {
     };
     const timer = window.setTimeout(async () => {
       try {
-        const { colors, maxRegions } = PHOTO_LEVELS[level];
-        const painting = await photoToPainting(photo.rgba, photo.width, photo.height, { ...DEFAULT_PHOTO_OPTIONS, colors, maxRegions }, pause, photo.detail);
+        const { colors, maxRegions, narrowStrip } = PHOTO_LEVELS[level];
+        const painting = await photoToPainting(photo.rgba, photo.width, photo.height, { ...DEFAULT_PHOTO_OPTIONS, colors, maxRegions, narrowStrip }, pause, photo.detail);
         await pause('pack');
         const packed = await packPhotoPainting(titleFromFileName(photo.name), painting);
         if (cancelled) return;

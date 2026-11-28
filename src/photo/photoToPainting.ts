@@ -12,6 +12,7 @@ import {
   mergeWeakBorders,
   modeFilter,
   quantize,
+  splitIntoNeighbours,
   toLab,
   upscaleLabels,
 } from './imageOps';
@@ -48,6 +49,12 @@ export interface PhotoOptions {
    * 클수록 더 약한 윤곽까지 잡지만 잡선이 늘어난다.
    */
   contours: number;
+  /**
+   * 폭이 좁고 길쭉한 칸(띠)을 한 줄의 선으로 합친다. 값은 긴 변에 대한 띠 폭의 절반 (0 = 끔).
+   * 띠 양쪽의 경계선 두 줄과 그 사이의 좁은 칸이, 띠 가운데의 선 한 줄이 된다.
+   * 클수록 더 넓은 띠까지 합쳐 선이 단순해진다. 눈·단추처럼 작고 동그란 칸은 합치지 않는다.
+   */
+  narrowStrip: number;
 }
 
 /** 윤곽선이 지나가는 자리를 나타내는 색 묶음 번호. 물감 묶음(0..251)과 겹치지 않는다. */
@@ -65,7 +72,11 @@ export const DEFAULT_PHOTO_OPTIONS: PhotoOptions = {
   thinLines: true,
   edgeMerge: 0.7,
   contours: 1,
+  narrowStrip: 1 / 150,
 };
+
+/** 이보다 길쭉해야(넓이 / 폭의 절반² 이 이보다 커야) 띠로 본다. 동그라미는 약 3, 네모는 4 다. */
+const STRIP_ELONGATION = 14;
 
 export interface PhotoPainting {
   width: number;
@@ -411,6 +422,29 @@ export async function photoToPainting(
     }
     if (thin === 0 || absorb(big, out.width, out.height, comp, selected, colorDistance) === 0) break;
     comp = components(big, out.width, out.height);
+  }
+
+  // 폭이 좁고 길쭉한 칸(띠)을 없애, 띠 양쪽의 두 줄을 가운데의 한 줄로 만든다
+  if (options.narrowStrip > 0) {
+    const limit = Math.max(3, Math.max(out.width, out.height) * options.narrowStrip);
+    for (let round = 0; round < 3; round++) {
+      const seg: Segmentation = { ids: Uint16Array.from(comp.ids), count: comp.count };
+      const info = describeRegions(seg, out.width, out.height);
+      const selected = new Uint8Array(comp.count + 1);
+      let strips = 0;
+      let paintable = 0;
+      for (const r of info) if (comp.labelOf[r.id] !== LINE) paintable++;
+      for (const r of info) {
+        if (comp.labelOf[r.id] === LINE || paintable - strips <= 1) continue;
+        const c = Math.max(1, r.clearance);
+        if (c < limit && r.pixels / (c * c) > STRIP_ELONGATION) {
+          selected[r.id] = 1;
+          strips++;
+        }
+      }
+      if (strips === 0 || splitIntoNeighbours(big, out.width, out.height, comp, selected, LINE) === 0) break;
+      comp = components(big, out.width, out.height);
+    }
   }
 
   // 4. 선화와 번호

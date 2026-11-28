@@ -705,3 +705,61 @@ export function contourEdges(
   for (let i = 0; i < n; i++) if (edge[i] === 2) edge[i] = 0;
   return edge;
 }
+
+/**
+ * 고른 칸(selected)을 없애고, 그 자리의 픽셀마다 가장 가까운 이웃 칸의 색 묶음으로 메운다.
+ * 가느다란 띠 모양의 칸을 이렇게 없애면 띠의 양쪽 경계선 두 줄이 띠 한가운데의 선 한 줄이 된다.
+ * (absorb 처럼 한 이웃에 통째로 붙이면 선이 띠의 한쪽 가장자리에 남는다)
+ *
+ * @param skipLabel 이 색 묶음(윤곽선)으로는 메우지 않는다. 메우면 선이 띠만큼 굵어진다.
+ * @returns 메운 픽셀 수
+ */
+export function splitIntoNeighbours(
+  labels: Uint8Array,
+  width: number,
+  height: number,
+  comp: Components,
+  selected: Uint8Array,
+  skipLabel = -1,
+): number {
+  const n = width * height;
+  const { ids } = comp;
+  // 메울 픽셀: 1, 메우는 데 쓸 수 있는 픽셀(이미 정해진 곳): 0
+  const todo = new Uint8Array(n);
+  let left = 0;
+  for (let i = 0; i < n; i++) {
+    if (selected[ids[i]]) {
+      todo[i] = 1;
+      left++;
+    }
+  }
+  if (left === 0) return 0;
+  // 여러 곳에서 한꺼번에 퍼져 나간다: 띠의 양쪽에서 들어와 가운데에서 만난다
+  let frontier: number[] = [];
+  for (let i = 0; i < n; i++) {
+    if (todo[i] || labels[i] === skipLabel) continue;
+    const x = i % width;
+    if ((x > 0 && todo[i - 1]) || (x < width - 1 && todo[i + 1]) || (i >= width && todo[i - width]) || (i < n - width && todo[i + width])) frontier.push(i);
+  }
+  let filled = 0;
+  while (frontier.length > 0) {
+    const next: number[] = [];
+    for (const i of frontier) {
+      const x = i % width;
+      const label = labels[i];
+      const spread = (j: number) => {
+        if (!todo[j]) return;
+        todo[j] = 0;
+        labels[j] = label;
+        filled++;
+        next.push(j);
+      };
+      if (x > 0) spread(i - 1);
+      if (x < width - 1) spread(i + 1);
+      if (i >= width) spread(i - width);
+      if (i < n - width) spread(i + width);
+    }
+    frontier = next;
+  }
+  return filled;
+}

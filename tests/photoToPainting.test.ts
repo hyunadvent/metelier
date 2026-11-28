@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { absorb, bilateral, components, modeFilter, quantize, seededRandom, toLab, upscaleLabels } from '../src/photo/imageOps';
+import { absorb, bilateral, components, modeFilter, quantize, seededRandom, splitIntoNeighbours, toLab, upscaleLabels } from '../src/photo/imageOps';
 import { closeHoles, featureLines, luminance, skinMask } from '../src/photo/faceLines';
 import { fitSize, photoToPainting } from '../src/photo/photoToPainting';
 
@@ -97,7 +97,7 @@ describe('이미지 연산', () => {
 });
 
 describe('사진을 색칠 그림으로', () => {
-  const options = { colors: 3, maxRegions: 50, outputSize: 240, workSize: 120, smoothing: 2, faceLines: false, thinLines: false, edgeMerge: 0, contours: 0 };
+  const options = { colors: 3, maxRegions: 50, outputSize: 240, workSize: 120, smoothing: 2, faceLines: false, thinLines: false, edgeMerge: 0, contours: 0, narrowStrip: 0 };
 
   it('면마다 칸이 되고, 칸의 번호는 원본 색을 가리킨다', async () => {
     const painting = await photoToPainting(testPhoto(), W, H, options);
@@ -225,7 +225,7 @@ describe('얼굴의 눈·코·입을 선으로 남기기', () => {
   });
 
   it('눈과 입은 칸이 되지 않고 얼굴 칸 위의 선으로 남는다', async () => {
-    const options = { colors: 4, maxRegions: 50, outputSize: 400, workSize: 200, smoothing: 1, faceLines: true, thinLines: false, edgeMerge: 0, contours: 0 };
+    const options = { colors: 4, maxRegions: 50, outputSize: 400, workSize: 200, smoothing: 1, faceLines: true, thinLines: false, edgeMerge: 0, contours: 0, narrowStrip: 0 };
     const painting = await photoToPainting(facePhoto(), FW, FH, options);
     const at = (x: number, y: number) => y * 2 * painting.width + x * 2; // 결과는 원본의 두 배 크기
     const face = painting.seg.ids[at(70, 85)];
@@ -249,7 +249,7 @@ describe('얼굴의 눈·코·입을 선으로 남기기', () => {
     for (let i = 0; i < photo.length; i += 4) {
       for (let c = 0; c < 3; c++) photo[i + c] = photo[i + c] + (random() - 0.5) * 24;
     }
-    const options = { colors: 4, maxRegions: 50, outputSize: 400, workSize: 200, smoothing: 2, faceLines: true, thinLines: false, edgeMerge: 0, contours: 0 };
+    const options = { colors: 4, maxRegions: 50, outputSize: 400, workSize: 200, smoothing: 2, faceLines: true, thinLines: false, edgeMerge: 0, contours: 0, narrowStrip: 0 };
     const kept = (await photoToPainting(photo, FW, FH, options)).smoothed.rgba;
     const blurred = (await photoToPainting(photo, FW, FH, { ...options, faceLines: false, thinLines: false, edgeMerge: 0, contours: 0 })).smoothed.rgba;
     const same = (data: Uint8ClampedArray, x: number, y: number) => {
@@ -269,7 +269,7 @@ describe('얼굴의 눈·코·입을 선으로 남기기', () => {
   });
 
   it('옵션을 끄면 눈과 입 자리에 선을 따로 그리지 않는다', async () => {
-    const options = { colors: 4, maxRegions: 50, outputSize: 400, workSize: 200, smoothing: 1, faceLines: false, thinLines: false, edgeMerge: 0, contours: 0 };
+    const options = { colors: 4, maxRegions: 50, outputSize: 400, workSize: 200, smoothing: 1, faceLines: false, thinLines: false, edgeMerge: 0, contours: 0, narrowStrip: 0 };
     const off = await photoToPainting(facePhoto(), FW, FH, options);
     const on = await photoToPainting(facePhoto(), FW, FH, { ...options, faceLines: true, thinLines: false, edgeMerge: 0, contours: 0 });
     const inked = (d: Uint8Array) => d.reduce((n, v) => n + (v > 128 ? 1 : 0), 0);
@@ -282,7 +282,7 @@ describe('얼굴의 눈·코·입을 선으로 남기기', () => {
 describe('색칠 그림다운 선화로 다듬기', () => {
   const GW = 200;
   const GH = 120;
-  const base = { colors: 5, maxRegions: 80, outputSize: 400, workSize: 200, smoothing: 0, faceLines: false, thinLines: false, edgeMerge: 0, contours: 0 };
+  const base = { colors: 5, maxRegions: 80, outputSize: 400, workSize: 200, smoothing: 0, faceLines: false, thinLines: false, edgeMerge: 0, contours: 0, narrowStrip: 0 };
 
   /** 왼쪽에서 오른쪽으로 서서히 어두워지는 회색 벽(조명 차이)에, 뚜렷한 빨간 동그라미 하나 */
   function gradientWall(): Uint8ClampedArray {
@@ -367,7 +367,7 @@ describe('살색', () => {
       }
     }
     // 색을 적게 써서 얼굴, 그늘, 가구가 한 묶음으로 뭉치기 쉽게 한다
-    const options = { colors: 3, maxRegions: 50, outputSize: 400, workSize: 200, smoothing: 1, faceLines: true, thinLines: false, edgeMerge: 0, contours: 0 };
+    const options = { colors: 3, maxRegions: 50, outputSize: 400, workSize: 200, smoothing: 1, faceLines: true, thinLines: false, edgeMerge: 0, contours: 0, narrowStrip: 0 };
     const p = await photoToPainting(rgba, w, h, options);
     const face = p.seg.ids[62 * 2 * p.width + 90 * 2];
     const color = p.palette.find((e) => e.number === p.assignment[face - 1])!.color;
@@ -415,7 +415,7 @@ describe('같은 색 사이의 윤곽', () => {
       rgba.set([...color, 255], (y * w + x) * 4);
     }
   }
-  const base = { colors: 2, maxRegions: 50, outputSize: 600, workSize: 300, smoothing: 1, faceLines: false, thinLines: false, edgeMerge: 0.7 };
+  const base = { colors: 2, maxRegions: 50, outputSize: 600, workSize: 300, smoothing: 1, faceLines: false, thinLines: false, edgeMerge: 0.7, narrowStrip: 0 };
   const at = (p: { seg: { ids: Uint16Array | Uint32Array | Int32Array }; width: number }, x: number, y: number) => p.seg.ids[y * 2 * p.width + x * 2];
 
   it('끄면 흰 바닥 위의 흰 원반은 바닥과 한 칸이 된다', async () => {
@@ -441,7 +441,7 @@ describe('물감 색은 원본 그림의 색을 지킨다', () => {
     expect(id).toBeGreaterThan(0);
     return hex(p.palette.find((e) => e.number === p.assignment[id - 1])!.color);
   };
-  const options = { colors: 8, maxRegions: 60, outputSize: 600, workSize: 300, smoothing: 3, faceLines: false, thinLines: true, edgeMerge: 0.7, contours: 1 };
+  const options = { colors: 8, maxRegions: 60, outputSize: 600, workSize: 300, smoothing: 3, faceLines: false, thinLines: true, edgeMerge: 0.7, contours: 1, narrowStrip: 0 };
 
   it('굵은 검은 테두리 안의 연노랑은 테두리 색에 섞여 탁해지지 않는다', async () => {
     const w = 300;
@@ -478,5 +478,41 @@ describe('물감 색은 원본 그림의 색을 지킨다', () => {
     const white = colorAt(p, 5, 5);
     for (let c = 0; c < 3; c++) expect(Math.abs(pink[c] - PINK[c])).toBeLessThanOrEqual(6);
     expect(white).toEqual([255, 255, 255]);
+  });
+});
+
+describe('좁은 띠를 선 한 줄로', () => {
+  it('띠의 픽셀은 가까운 쪽 이웃으로 메워져, 경계가 띠 가운데에 온다', () => {
+    const w = 24;
+    const h = 6;
+    const labels = new Uint8Array(w * h);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) labels[y * w + x] = x < 10 ? 1 : x < 14 ? 2 : 3;
+    const comp = components(labels, w, h);
+    const selected = new Uint8Array(comp.count + 1);
+    selected[comp.ids[12]] = 1;
+    expect(splitIntoNeighbours(labels, w, h, comp, selected)).toBe(4 * h);
+    const row = Array.from(labels.slice(0, w));
+    expect(row.slice(10, 12)).toEqual([1, 1]);
+    expect(row.slice(12, 14)).toEqual([3, 3]);
+  });
+
+  it('두 면 사이의 가는 색 띠는 칸이 되지 않고, 켜지 않으면 칸이 된다', async () => {
+    const w = 120;
+    const h = 80;
+    const rgba = new Uint8ClampedArray(w * h * 4);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const color = x >= 58 && x < 62 ? GREEN : x < 60 ? RED : BLUE;
+        rgba.set([...color, 255], (y * w + x) * 4);
+      }
+    }
+    const base = { colors: 3, maxRegions: 50, outputSize: 240, workSize: 120, smoothing: 0, faceLines: false, thinLines: false, edgeMerge: 0, contours: 0 };
+    const greenRegions = (p: Awaited<ReturnType<typeof photoToPainting>>) =>
+      p.assignment.filter((n) => near(hexToRgb(p.palette.find((e) => e.number === n)!.color), GREEN, 30)).length;
+    const off = await photoToPainting(rgba, w, h, { ...base, narrowStrip: 0 });
+    const on = await photoToPainting(rgba, w, h, { ...base, narrowStrip: 1 / 40 });
+    expect(greenRegions(off)).toBe(1);
+    expect(greenRegions(on)).toBe(0);
+    expect(on.regions.length).toBe(2);
   });
 });
