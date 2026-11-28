@@ -4,6 +4,7 @@ import { FRAME_INFO, FRAME_KINDS, loadDecor, MAX_WALL_PICTURES, PLANT_INFO, PLAN
 import { WallPicker } from './WallPicker';
 import { LoginNudge, UserButton } from '../auth/UserButton';
 import { onRemoteApplied } from '../storage/changes';
+import { useSync } from '../sync/SyncContext';
 import type { Activity } from './room';
 import { PaintingPicker } from '../photo/PaintingPicker';
 import { PhotoDialog } from '../photo/PhotoDialog';
@@ -49,6 +50,9 @@ export function Atelier3DScreen({ startSeated, onStartColoring }: Atelier3DScree
   /** 그림 벽에서 고른 그림 (옮기거나 치우는 중) */
   const [wallSelected, setWallSelected] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const { status: syncStatus } = useSync();
+  /** 다른 기기에서 꾸민 것과 작품을 받아 오는 중 */
+  const loadingSaved = syncStatus?.state === 'syncing' && (syncStatus.downloading ?? 0) > 0;
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -165,6 +169,12 @@ export function Atelier3DScreen({ startSeated, onStartColoring }: Atelier3DScree
       <div className="atelier3d__account">
         <UserButton />
       </div>
+      {loadingSaved && (
+        <p className="atelier3d__loading" role="status" data-testid="sync-loading">
+          <span className="atelier3d__loading-dot" aria-hidden="true" />
+          저장된 화실을 불러오는 중…
+        </p>
+      )}
       {error && <p className="atelier__message">{error}</p>}
       {!error && !wallSelected && (
         <p className="atelier__hint">

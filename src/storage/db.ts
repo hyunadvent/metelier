@@ -1,4 +1,4 @@
-import { notifyLocalChange, type SyncKind } from './changes';
+import { notifyLocalChange, notifyRemoteApplied, type SyncKind } from './changes';
 import type { PixelEncoding } from './pixelStore';
 
 /** 칠하던 그림의 저장본. 그림마다 하나. */
@@ -108,13 +108,15 @@ export function loadProgress(paintingId: string): Promise<ProgressRecord | undef
 /** 바뀐 것을 알리고, 다시 살아난 것이면 지운 기록을 없앤다. */
 async function changed(kind: SyncKind, key: string, options?: WriteOptions): Promise<void> {
   await run(TOMBSTONES, 'readwrite', (s) => s.delete(`${kind}:${key}`));
-  if (!options?.fromSync) notifyLocalChange(kind, key);
+  if (options?.fromSync) notifyRemoteApplied(new Set([kind]));
+  else notifyLocalChange(kind, key);
 }
 
 /** 지운 것을 기록하고 알린다. */
 async function removed(kind: SyncKind, key: string, options?: WriteOptions, deletedAt = Date.now()): Promise<void> {
   if (options?.fromSync) {
     await run(TOMBSTONES, 'readwrite', (s) => s.delete(`${kind}:${key}`));
+    notifyRemoteApplied(new Set([kind]));
     return;
   }
   const tombstone: Tombstone = { id: `${kind}:${key}`, kind, key, deletedAt };

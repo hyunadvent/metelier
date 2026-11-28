@@ -205,3 +205,32 @@
 .atelier3d__picker .login-nudge {
   margin-right: -26px;
 }
+
+/* ── 다른 기기에서 저장한 것을 받는 중 ─────────── */
+
+.atelier3d__loading {
+  position: absolute;
+  top: 76px;
+  right: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 2px solid #ecd9c2;
+  background: rgb(255 250 242 / 95%);
+  color: #5b4636;
+  font-size: 13px;
+  font-weight: 700;
+  box-shadow: 0 3px 8px rgb(91 70 54 / 18%);
+  pointer-events: none;
+}
+
+.atelier3d__loading-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #6fb7e9;
+  animation: sync-pulse 0.8s ease-in-out infinite alternate;
+}

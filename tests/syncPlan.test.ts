@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { planSync, type LocalEntry, type LocalTombstone, type RemoteEntry } from '../src/sync/plan';
+import { orderActions, planSync, type LocalEntry, type LocalTombstone, type RemoteEntry } from '../src/sync/plan';
 import { describeSync } from '../src/sync/SyncContext';
 
 const local = (key: string, updatedAt: number, kind: LocalEntry['kind'] = 'progress'): LocalEntry => ({ kind, key, updatedAt });
@@ -78,5 +78,18 @@ describe('저장 상태 글', () => {
     expect(describeSync({ state: 'error', lastSyncedAt: null, message: '인터넷에 연결되어 있지 않아요' }, now)).toBe('인터넷에 연결되어 있지 않아요');
     expect(describeSync({ state: 'idle', lastSyncedAt: now - 5_000 }, now)).toBe('모두 저장됨 · 방금');
     expect(describeSync({ state: 'idle', lastSyncedAt: now - 5 * 60_000 }, now)).toBe('모두 저장됨 · 5분 전');
+  });
+});
+
+describe('받는 차례', () => {
+  it('벽에 거는 작품부터 받고, 올리기와 지우기는 받은 뒤에 한다', () => {
+    const actions = planSync(
+      [local('mine', 50)],
+      [],
+      [remote('p1', 10), remote('art', 10, false, 'gallery'), remote('photo', 10, false, 'painting'), remote('mine', 20, true)],
+    );
+    const { downloads, rest } = orderActions(actions);
+    expect(downloads.map((a) => `${a.kind}:${a.key}`)).toEqual(['gallery:art', 'painting:photo', 'progress:p1']);
+    expect(rest.map((a) => a.type)).toEqual(['upload']);
   });
 });

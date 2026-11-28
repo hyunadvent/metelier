@@ -42,6 +42,19 @@ export type SyncAction =
 
 const id = (kind: SyncKind, key: string) => `${kind}:${key}`;
 
+/** 받는 차례: 화면에 바로 보이는 것(벽에 거는 작품)부터. 작을수록 먼저 */
+const DOWNLOAD_ORDER: Record<SyncKind, number> = { decor: 0, gallery: 1, painting: 2, progress: 3 };
+
+/**
+ * 할 일을 실행할 차례로 나눈다.
+ * - 받기는 화면에 바로 보이는 것부터, 한 묶음 안에서는 동시에 받아도 된다.
+ * - 올리기, 지우기, 기록 정리는 받은 뒤에 차례로 한다.
+ */
+export function orderActions(actions: SyncAction[]): { downloads: SyncAction[]; rest: SyncAction[] } {
+  const downloads = actions.filter((a) => a.type === 'download').sort((a, b) => DOWNLOAD_ORDER[a.kind] - DOWNLOAD_ORDER[b.kind]);
+  return { downloads, rest: actions.filter((a) => a.type !== 'download') };
+}
+
 export function planSync(local: LocalEntry[], tombstones: LocalTombstone[], remote: RemoteEntry[]): SyncAction[] {
   const live = new Map(local.map((e) => [id(e.kind, e.key), e]));
   const dead = new Map(tombstones.map((t) => [id(t.kind, t.key), t]));

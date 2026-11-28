@@ -1,4 +1,4 @@
-import { notifyLocalChange } from '../storage/changes';
+import { notifyLocalChange, notifyRemoteApplied } from '../storage/changes';
 import { normalizeStamps, stampChanges, type DecorStamps } from './decorMerge';
 
 // 화실의 꾸민 상태. 방을 만드는 함수가 이 데이터를 읽어 그리므로,
@@ -225,7 +225,8 @@ export function saveDecor(decor: AtelierDecor, fromSync?: { updatedAt: number; s
   } catch {
     // 저장할 수 없는 환경이면 이번 접속 동안만 유지된다.
   }
-  if (!fromSync) notifyLocalChange('decor', 'main');
+  if (fromSync) notifyRemoteApplied(new Set(['decor']));
+  else notifyLocalChange('decor', 'main');
 }
 
 /** 조각마다 바꾼 때의 기록 */

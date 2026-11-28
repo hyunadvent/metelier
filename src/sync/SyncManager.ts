@@ -20,12 +20,13 @@ import {
   type StoredPainting,
 } from '../storage/db';
 import type { PixelEncoding } from '../storage/pixelStore';
-import { planSync, type LocalEntry, type SyncAction } from './plan';
+import { orderActions, planSync, type LocalEntry, type SyncAction } from './plan';
 import type { RemoteItem, SyncStore } from './store';
 
 export type SyncStatus =
   | { state: 'idle'; lastSyncedAt: number | null }
-  | { state: 'syncing'; lastSyncedAt: number | null }
+  /** downloading: 서버에서 받을 것이 있어 받는 중 (화면에 "불러오는 중" 을 보여 준다) */
+  | { state: 'syncing'; lastSyncedAt: number | null; downloading?: number }
   | { state: 'error'; lastSyncedAt: number | null; message: string };
 
 /** 이 브라우저의 저장본이 누구의 것인지 (마지막으로 동기화한 사람의 ID) */
@@ -34,6 +35,8 @@ const OWNER_KEY = 'metelier.syncOwner';
 const PUSH_DELAY_MS = 2500;
 /** 실패하면 이만큼 뒤에 다시 해 본다 */
 const RETRY_MS = 30_000;
+/** 한 번에 같이 받는 파일 수 */
+const PARALLEL_DOWNLOADS = 4;
 
 /** 사진 그림의 파일 부분 (서버에는 JSON 파일 하나로 둔다) */
 type PaintingFiles = Pick<StoredPainting, 'regions' | 'lines' | 'reference' | 'thumbnail'>;
@@ -75,12 +78,14 @@ export class SyncManager {
   ) {}
 
   async start(): Promise<void> {
+    if (this.stopped) return;
     const owner = readOwner();
     if (owner && owner !== this.userId) {
       await clearLocalPaintings();
       resetDecor();
       notifyRemoteApplied(new Set<SyncKind>(['decor', 'progress', 'gallery', 'painting']));
     }
+    if (this.stopped) return;
     writeOwner(this.userId);
     this.cleanups.push(onLocalChange(() => this.schedule(PUSH_DELAY_MS)));
     const onFocus = () => document.visibilityState === 'visible' && this.schedule(0);
@@ -137,12 +142,25 @@ export class SyncManager {
     this.setStatus({ state: 'syncing', lastSyncedAt: this.status.lastSyncedAt });
     try {
       const [all, local, tombstones] = await Promise.all([this.store.list(), this.localEntries(), listTombstones()]);
+      // 기다리는 동안 멈췄으면 (로그아웃, 화면을 다시 띄움) 받은 것을 쓰지 않는다
+      if (this.stopped) return;
       const applied = new Set<SyncKind>();
       // 꾸밈은 한 덩어리로 "나중 것이 이긴다" 가 아니라 조각마다 합친다
       if (await this.syncDecor(all.find((r) => r.kind === 'decor' && r.key === 'main'))) applied.add('decor');
       const remote = all.filter((r) => r.kind !== 'decor');
       const byId = new Map(remote.map((r) => [`${r.kind}:${r.key}`, r]));
-      for (const action of planSync(local.filter((e) => e.kind !== 'decor'), tombstones, remote)) {
+      const { downloads, rest } = orderActions(planSync(local.filter((e) => e.kind !== 'decor'), tombstones, remote));
+      // 받기: 화면에 보이는 것부터, 몇 개씩 동시에
+      if (downloads.length > 0) this.setStatus({ state: 'syncing', lastSyncedAt: this.status.lastSyncedAt, downloading: downloads.length });
+      let next = 0;
+      const worker = async () => {
+        while (next < downloads.length && !this.stopped) {
+          const action = downloads[next++];
+          await this.apply(action, byId.get(`${action.kind}:${action.key}`), applied);
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(PARALLEL_DOWNLOADS, downloads.length) }, worker));
+      for (const action of rest) {
         if (this.stopped) return;
         await this.apply(action, byId.get(`${action.kind}:${action.key}`), applied);
       }
