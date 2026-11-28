@@ -219,6 +219,7 @@ export class Atelier3DView {
     this.wall = decor.wall;
     if (this.wallSelection && !this.wall.some((p) => p.id === this.wallSelection)) this.selectWallPicture(null);
     void this.rebuildWall();
+    void this.refreshEasel();
   }
 
   /** 꾸미기: 그 자리의 화분을 바꾼다. */
@@ -241,10 +242,11 @@ export class Atelier3DView {
     this.room.setWallPictures(views);
   }
 
-  /** 칠하던 그림을 이젤의 캔버스에 올린다. 칠하던 그림이 없으면 빈 캔버스. */
+  /** 마지막으로 칠한 그림을 이젤의 캔버스에 올린다. 그림 벽에 건 그림은 올리지 않는다. 없으면 빈 캔버스. */
   async refreshEasel(): Promise<void> {
     const request = ++this.easelRequest;
-    const picture = await loadEaselPicture().catch((e: unknown) => {
+    const hung = new Set(this.wall.map((p) => p.paintingId));
+    const picture = await loadEaselPicture(hung).catch((e: unknown) => {
       console.warn('이젤 그림을 만들지 못했습니다.', e);
       return null;
     });
@@ -298,6 +300,7 @@ export class Atelier3DView {
     this.wall = [...this.wall, picture];
     await this.rebuildWall();
     this.events.onWallChange(this.wall);
+    void this.refreshEasel();
     return picture.id;
   }
 
@@ -318,6 +321,7 @@ export class Atelier3DView {
     if (this.wallSelection === id) this.selectWallPicture(null);
     void this.rebuildWall();
     this.events.onWallChange(this.wall);
+    void this.refreshEasel();
   }
 
   /** 고른 그림을 살짝 앞으로 내밀어 보여 준다. null 이면 풀기. */

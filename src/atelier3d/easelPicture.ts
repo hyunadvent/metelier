@@ -14,19 +14,23 @@ export interface EaselPicture {
 const MAX_SIZE = 1024;
 
 /**
- * 이젤에 올릴 그림을 고른다: 아직 다 칠하지 않은 그림 가운데 가장 최근에 칠한 것.
- * 다 칠한 그림은 작품집(과 그림 벽)으로 가므로 이젤에는 올리지 않는다.
+ * 이젤에 올릴 그림을 고른다: 마지막으로 칠한 그림 (다 칠한 것도).
+ * 다만 그림 벽에 건 그림은 이젤에서 내려간 것으로 보고, 그다음으로 최근에 칠한 그림을 올린다.
+ * @param hung 그림 벽에 걸린 그림들
  */
-export function pickEaselProgress(records: Pick<ProgressRecord, 'paintingId' | 'completed' | 'updatedAt'>[]): string | null {
+export function pickEaselProgress(
+  records: Pick<ProgressRecord, 'paintingId' | 'updatedAt'>[],
+  hung: ReadonlySet<string> = new Set(),
+): string | null {
   let best: (typeof records)[number] | null = null;
-  for (const r of records) if (!r.completed && (!best || r.updatedAt > best.updatedAt)) best = r;
+  for (const r of records) if (!hung.has(r.paintingId) && (!best || r.updatedAt > best.updatedAt)) best = r;
   return best?.paintingId ?? null;
 }
 
-/** 칠하던 그림을 이젤에 올릴 그림으로 만든다. 칠하던 그림이 없으면 null */
-export async function loadEaselPicture(): Promise<EaselPicture | null> {
+/** 마지막으로 칠한 그림을 이젤에 올릴 그림으로 만든다. 올릴 그림이 없으면 null */
+export async function loadEaselPicture(hung: ReadonlySet<string> = new Set()): Promise<EaselPicture | null> {
   const records = await listProgress();
-  const paintingId = pickEaselProgress(records);
+  const paintingId = pickEaselProgress(records, hung);
   if (!paintingId) return null;
   const record = records.find((r) => r.paintingId === paintingId)!;
   const look = await loadPaintingLook(paintingId);
