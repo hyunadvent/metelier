@@ -13,13 +13,15 @@ export interface DirtyRect {
 const COVERED_ALPHA = 128;
 
 /**
- * 칸을 거의 다 칠했을 때 남은 자잘한 틈은 스트로크가 끝날 때 주변 색으로 메운다.
- * 화면에서 눈에 잘 띄지 않는 크기까지만: 칸 픽셀의 0.5% 이하이면서 이 픽셀 수 이하.
+ * 칸을 이만큼 넘게 칠하면, 스트로크가 끝날 때 남은 곳을 가까이 칠한 색으로 메워 칸을 끝낸다.
+ * 마지막 한두 군데를 찾아 헤매지 않게 한다.
  */
-const SPECK_MAX_PIXELS = 400;
-const SPECK_MAX_RATIO = 0.005;
-/** 틈을 메울 색을 찾는 범위 (픽셀). */
-const SPECK_SEARCH_RADIUS = 16;
+const REGION_AUTOFILL = 0.99;
+/**
+ * 그림 전체를 이만큼 넘게 칠하면, 남은 칸을 모두 채워 그림을 끝낸다.
+ * 조금 칠한 칸은 가까이 칠한 색으로, 아직 칠하지 않은 칸은 그 칸의 번호 색으로 채운다.
+ */
+const PICTURE_AUTOFILL = 0.99;
 
 /** 되돌릴 수 있는 스트로크 수와, 기록 전체가 담을 수 있는 픽셀 수의 상한. */
 const MAX_HISTORY_STROKES = 30;
@@ -65,6 +67,8 @@ export class PaintEngine {
   private undoStack: StrokeRecord[] = [];
   private redoStack: StrokeRecord[] = [];
   private brush: Brush | null = null;
+  /** 칸마다의 번호 색. 그림을 거의 다 칠했을 때 아직 칠하지 않은 칸을 채우는 데 쓴다. */
+  private regionColor: ((region: number) => Rgb | null) | null = null;
   private radius = 16;
   private activeRegion = 0;
   private lastX = 0;
@@ -126,6 +130,22 @@ export class PaintEngine {
     this.touched = new Uint8Array(count);
   }
 
+  /** 칸마다의 번호 색을 알려 준다. 알려 주지 않으면 그림 전체를 채우는 일은 하지 않는다. */
+  setRegionColors(colorOf: (region: number) => Rgb | null): void {
+    this.regionColor = colorOf;
+  }
+
+  /** 그림 전체에서 칠한 비율 (0~1). 선에 가려진 픽셀은 세지 않는다. */
+  totalCoverage(): number {
+    let size = 0;
+    let covered = 0;
+    for (let id = 1; id <= this.regionCount; id++) {
+      size += this.regionSize[id];
+      covered += this.coveredCount[id];
+    }
+    return size ? covered / size : 0;
+  }
+
   setBrush(brush: Brush | null): void {
     this.brush = brush;
   }
@@ -167,7 +187,10 @@ export class PaintEngine {
   endStroke(): void {
     const region = this.activeRegion;
     this.activeRegion = 0;
-    if (region !== 0 && this.brush?.kind === 'paint') this.fillSpecks(region);
+    if (region !== 0 && this.brush?.kind === 'paint') {
+      if (this.coverage(region) >= REGION_AUTOFILL) this.fillRemaining(region);
+      if (this.regionColor && this.totalCoverage() >= PICTURE_AUTOFILL) this.finishPicture();
+    }
 
     const len = this.logLen;
     if (len === 0) return;
@@ -330,65 +353,116 @@ export class PaintEngine {
   }
 
   /**
-   * 칸에 자잘한 틈만 남았으면 가까운 칠의 색으로 메운다.
-   * 화면 배율에서는 보이지 않는 한두 픽셀 때문에 칸이 끝나지 않는 일을 막는다.
+   * 칸의 남은 곳을 가까이 칠한 색으로 채운다 (칠한 곳에서 바깥으로 번져 가며).
+   * 선에 가려진 픽셀도 함께 채워 칸이 깔끔하게 보이게 한다. 바뀐 픽셀은 지금 스트로크의 기록에 들어간다.
+   * @returns 칠한 곳이 하나도 없어 채우지 못했으면 false
    */
-  private fillSpecks(region: number): void {
-    const size = this.regionSize[region];
-    const remaining = size - this.coveredCount[region];
-    if (remaining === 0 || remaining > Math.min(SPECK_MAX_PIXELS, Math.ceil(size * SPECK_MAX_RATIO))) return;
-
-    const { width, height, regionIds, countable, covered, pixels } = this;
+  private fillRemaining(region: number): boolean {
+    const { width, regionIds, covered, pixels } = this;
     const b = region * 4;
     const x0 = this.regionBox[b];
     const y0 = this.regionBox[b + 1];
     const x1 = this.regionBox[b + 2];
     const y1 = this.regionBox[b + 3];
+    if (x1 < x0) return false;
 
-    // 메우면서 생긴 색을 다시 참조하지 않도록 먼저 틈을 모은다.
-    const specks: number[] = [];
+    // 칠한 곳 가운데 빈 곳과 맞닿은 픽셀(가장자리)에서 시작해, 빈 곳으로만 번져 간다
+    const bw = x1 - x0 + 1;
+    const done = new Uint8Array(bw * (y1 - y0 + 1));
+    let queue = new Int32Array(1024);
+    let tail = 0;
+    const push = (i: number) => {
+      if (tail === queue.length) {
+        const bigger = new Int32Array(queue.length * 2);
+        bigger.set(queue);
+        queue = bigger;
+      }
+      queue[tail++] = i;
+    };
+    const empty = (x: number, y: number) => {
+      if (x < x0 || x > x1 || y < y0 || y > y1) return false;
+      const i = y * width + x;
+      return regionIds[i] === region && !covered[i];
+    };
     for (let y = y0; y <= y1; y++) {
       for (let x = x0; x <= x1; x++) {
         const i = y * width + x;
-        if (regionIds[i] === region && countable[i] && !covered[i]) specks.push(i);
-      }
-    }
-
-    const sources = new Int32Array(specks.length).fill(-1);
-    specks.forEach((i, k) => {
-      const x = i % width;
-      const y = (i - x) / width;
-      search: for (let r = 1; r <= SPECK_SEARCH_RADIUS; r++) {
-        for (let dy = -r; dy <= r; dy++) {
-          const ny = y + dy;
-          if (ny < 0 || ny >= height) continue;
-          const edge = dy === -r || dy === r;
-          for (let dx = -r; dx <= r; dx += edge ? 1 : 2 * r) {
-            const nx = x + dx;
-            if (nx < 0 || nx >= width) continue;
-            const j = ny * width + nx;
-            if (regionIds[j] === region && covered[j]) {
-              sources[k] = j;
-              break search;
-            }
-          }
+        if (regionIds[i] !== region || !covered[i]) continue;
+        if (empty(x - 1, y) || empty(x + 1, y) || empty(x, y - 1) || empty(x, y + 1)) {
+          done[(y - y0) * bw + (x - x0)] = 1;
+          push(i);
         }
       }
-    });
+    }
+    if (tail === 0) return false;
 
-    specks.forEach((i, k) => {
-      const j = sources[k];
-      if (j < 0) return;
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    const spread = (from: number, nx: number, ny: number) => {
+      if (nx < x0 || nx > x1 || ny < y0 || ny > y1) return;
+      const i = ny * width + nx;
+      const d = (ny - y0) * bw + (nx - x0);
+      if (done[d] || regionIds[i] !== region || covered[i]) return;
+      done[d] = 1;
       this.remember(i);
-      pixels[i * 4] = pixels[j * 4];
-      pixels[i * 4 + 1] = pixels[j * 4 + 1];
-      pixels[i * 4 + 2] = pixels[j * 4 + 2];
+      pixels[i * 4] = pixels[from * 4];
+      pixels[i * 4 + 1] = pixels[from * 4 + 1];
+      pixels[i * 4 + 2] = pixels[from * 4 + 2];
       pixels[i * 4 + 3] = 255;
       this.updateCovered(i);
-      const x = i % width;
-      const y = (i - x) / width;
-      this.markDirty(x, y, x, y);
-    });
+      if (nx < minX) minX = nx;
+      if (nx > maxX) maxX = nx;
+      if (ny < minY) minY = ny;
+      if (ny > maxY) maxY = ny;
+      push(i);
+    };
+    for (let head = 0; head < tail; head++) {
+      const from = queue[head];
+      const fx = from % width;
+      const fy = (from - fx) / width;
+      spread(from, fx - 1, fy);
+      spread(from, fx + 1, fy);
+      spread(from, fx, fy - 1);
+      spread(from, fx, fy + 1);
+    }
+    if (maxX >= minX) this.markDirty(minX, minY, maxX, maxY);
+    return true;
+  }
+
+  /** 칸 전체를 한 색으로 칠한다 (선에 가려진 픽셀도). 바뀐 픽셀은 지금 스트로크의 기록에 들어간다. */
+  private fillSolid(region: number, color: Rgb): void {
+    const { width, regionIds, pixels } = this;
+    const b = region * 4;
+    const x0 = this.regionBox[b];
+    const y0 = this.regionBox[b + 1];
+    const x1 = this.regionBox[b + 2];
+    const y1 = this.regionBox[b + 3];
+    if (x1 < x0) return;
+    for (let y = y0; y <= y1; y++) {
+      for (let x = x0; x <= x1; x++) {
+        const i = y * width + x;
+        if (regionIds[i] !== region) continue;
+        this.remember(i);
+        pixels[i * 4] = color[0];
+        pixels[i * 4 + 1] = color[1];
+        pixels[i * 4 + 2] = color[2];
+        pixels[i * 4 + 3] = 255;
+        this.updateCovered(i);
+      }
+    }
+    this.markDirty(x0, y0, x1, y1);
+  }
+
+  /** 그림을 거의 다 칠했을 때: 남은 칸을 모두 채워 그림을 끝낸다. */
+  private finishPicture(): void {
+    for (let id = 1; id <= this.regionCount; id++) {
+      if (this.regionSize[id] === 0 || this.isFilled(id)) continue;
+      if (this.fillRemaining(id)) continue;
+      const color = this.regionColor?.(id);
+      if (color) this.fillSolid(id, color);
+    }
   }
 
   private markDirty(x0: number, y0: number, x1: number, y1: number): void {

@@ -262,3 +262,67 @@ describe('decodeRegionIds', () => {
     expect(Array.from(decodeRegionIds(rgba))).toEqual([0, 7, 300]);
   });
 });
+
+describe('거의 다 칠하면 나머지를 채운다', () => {
+  /** 넓은 칸 1 (가로 200 x 세로 100) 과 작은 칸 2 (오른쪽 아래 4 x 4) */
+  const BW = 200;
+  const BH = 104;
+  function bigEngine(): PaintEngine {
+    const ids = new Uint16Array(BW * BH).fill(1);
+    for (let y = 100; y < 104; y++) for (let x = 196; x < 200; x++) ids[y * BW + x] = 2;
+    return new PaintEngine(BW, BH, ids);
+  }
+  const at = (engine: PaintEngine, x: number, y: number) => Array.from(engine.pixels.subarray((y * BW + x) * 4, (y * BW + x) * 4 + 4));
+  /** 칸 1 을 왼쪽에서부터 columns 줄만 빼고 미리 칠해 둔다 */
+  function prepaint(engine: PaintEngine, emptyColumns: number): void {
+    const saved = new Uint8ClampedArray(BW * BH * 4);
+    for (let y = 0; y < BH; y++) {
+      for (let x = emptyColumns; x < BW; x++) if (!(y >= 100 && x >= 196)) saved.set([...BLUE, 255], (y * BW + x) * 4);
+    }
+    engine.loadPixels(saved);
+  }
+  const touch = (engine: PaintEngine, color: Rgb, x: number, y: number) => {
+    engine.setBrush({ kind: 'paint', color });
+    engine.setRadius(1);
+    engine.beginStroke(x, y);
+    engine.endStroke();
+  };
+
+  it('칸을 99% 넘게 칠하면 남은 곳을 가까이 칠한 색으로 채운다', () => {
+    const engine = bigEngine();
+    prepaint(engine, 1); // 맨 왼쪽 한 줄(약 0.5%)만 빈다
+    expect(engine.isFilled(1)).toBe(false);
+    touch(engine, BLUE, 100, 50);
+    expect(engine.isFilled(1)).toBe(true);
+    expect(at(engine, 0, 30)).toEqual([...BLUE, 255]);
+  });
+
+  it('99% 에 못 미치면 채우지 않는다', () => {
+    const engine = bigEngine();
+    prepaint(engine, 4); // 약 2% 가 빈다
+    touch(engine, BLUE, 100, 50);
+    expect(engine.isFilled(1)).toBe(false);
+    expect(at(engine, 0, 30)[3]).toBe(0);
+  });
+
+  it('그림 전체를 99% 넘게 칠하면 아직 칠하지 않은 칸을 번호 색으로 채워 끝낸다', () => {
+    const engine = bigEngine();
+    engine.setRegionColors((region) => (region === 2 ? RED : null));
+    prepaint(engine, 0); // 칸 1 은 다 칠했고 작은 칸 2 만 남았다
+    expect(engine.filledCount()).toBe(1);
+    touch(engine, BLUE, 100, 50);
+    expect(engine.filledCount()).toBe(2);
+    expect(at(engine, 198, 102)).toEqual([...RED, 255]);
+    // 채운 것도 그 스트로크와 함께 되돌려진다
+    engine.undo();
+    expect(engine.filledCount()).toBe(1);
+    expect(at(engine, 198, 102)[3]).toBe(0);
+  });
+
+  it('번호 색을 모르면 그림 전체를 채우지 않는다', () => {
+    const engine = bigEngine();
+    prepaint(engine, 0);
+    touch(engine, BLUE, 100, 50);
+    expect(engine.isFilled(2)).toBe(false);
+  });
+});

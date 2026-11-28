@@ -3,7 +3,7 @@ import { createAtelierScene } from '../../atelier/AtelierScene';
 import { easelPlacement } from '../../atelier/geometry';
 import type { AtelierLayout } from '../../atelier/scene';
 import { PaintEngine, type Brush } from '../engine/PaintEngine';
-import type { LoadedPainting } from '../painting';
+import { hexToRgb, type LoadedPainting } from '../painting';
 import { clampPlacement, clampZoom, fitScale, scaleAround, type Placement, type Rect } from './viewport';
 
 /** 붓이 칠하는 반지름 (화면 픽셀). 확대하면 그림 기준으로는 가늘어진다. */
@@ -82,6 +82,10 @@ export class ColoringView {
   ) {
     const { meta, regionIds, hidden } = painting;
     this.engine = new PaintEngine(meta.width, meta.height, regionIds, hidden);
+    // 그림을 거의 다 칠하면 아직 칠하지 않은 칸을 그 칸의 번호 색으로 채운다
+    const paletteColor = new Map(meta.palette.map((p) => [p.number, hexToRgb(p.color)]));
+    const regionColor = new Map(meta.regions.map((r) => [r.id, paletteColor.get(r.number) ?? null]));
+    this.engine.setRegionColors((region) => regionColor.get(region) ?? null);
 
     this.paintCanvas = document.createElement('canvas');
     this.paintCanvas.width = meta.width;
