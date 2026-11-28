@@ -603,11 +603,23 @@
   stroke-width: 2;
 }
 
-.brush__flip-arrow {
-  fill: none;
+.brush__flip-mirror {
   stroke: #7a4a25;
-  stroke-width: 2;
-  stroke-linecap: round;
+  stroke-width: 1.6;
+  stroke-dasharray: 2.5 2;
+}
+
+.brush__flip-solid {
+  fill: #b5713c;
+  stroke: #7a4a25;
+  stroke-width: 1.6;
+  stroke-linejoin: round;
+}
+
+.brush__flip-outline {
+  fill: #fffaf2;
+  stroke: #7a4a25;
+  stroke-width: 1.6;
   stroke-linejoin: round;
 }
 

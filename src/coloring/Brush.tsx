@@ -8,7 +8,9 @@ const PAINTING_ANGLE = -29;
 const CLEAN_BRISTLE = '#ecd9b6';
 const EDGE = 8;
 /** 붓의 기준점에서 손잡이 끝까지의 거리 (오른쪽, 위쪽). 처음 놓을 때 손잡이가 화면 밖으로 나가지 않게 한다. */
-const HANDLE_REACH = { x: 230, y: 160 };
+const HANDLE_REACH = { x: 245, y: 170 };
+/** 위쪽 버튼 줄의 아래 끝 (처음 놓을 때 손잡이 끝이 버튼을 가리지 않게). 세로 휴대폰은 두 줄이다. */
+const topBarBottom = () => (window.innerWidth <= 600 && window.innerHeight > window.innerWidth ? 122 : 72);
 
 type Mode = 'idle' | 'move' | 'paint';
 
@@ -119,7 +121,7 @@ export function Brush({ view, palette, tool, onDip, onEmptyStroke, onPaint, cue 
         flipRef.current
           ? Math.max(window.innerWidth * 0.26, HANDLE_REACH.x)
           : Math.min(window.innerWidth * 0.74, window.innerWidth - HANDLE_REACH.x),
-        Math.max(window.innerHeight * 0.3, HANDLE_REACH.y),
+        Math.max(window.innerHeight * 0.3, HANDLE_REACH.y + topBarBottom()),
       );
     let size = { w: window.innerWidth, h: window.innerHeight };
     place();
@@ -294,11 +296,15 @@ export function Brush({ view, palette, tool, onDip, onEmptyStroke, onPaint, cue 
         <rect className="brush__handle" x="52" y="-26" width="212" height="52" rx="26" {...handlers('move')} />
         <ellipse className="brush__bristle" cx="18" cy="0" rx="38" ry="30" {...handlers('paint')} />
 
-        {/* 손잡이 끝의 양쪽 화살표: 누르면 붓이 반대 방향으로 기울어진다 */}
-        <g className="brush__flip" transform="translate(278 0)" onPointerDown={onFlip} aria-label="붓 방향 바꾸기">
-          <circle className="brush__flip-hit" r="20" />
-          <circle className="brush__flip-face" r="12" />
-          <path className="brush__flip-arrow" d="M -6 0 H 6 M -6 0 l 3.5 -3.5 M -6 0 l 3.5 3.5 M 6 0 l -3.5 -3.5 M 6 0 l -3.5 3.5" />
+        {/* 손잡이 끝의 뒤집기 표시 (좌우 대칭 아이콘): 누르면 붓이 반대 방향으로 기울어진다.
+            붓의 기울기만큼 되돌려 화면에서 똑바로 서 보이게 한다 */}
+        <g className="brush__flip" transform={`translate(280 0) rotate(${-ANGLE})`} onPointerDown={onFlip} aria-label="붓 방향 뒤집기">
+          <circle className="brush__flip-hit" r="22" />
+          <circle className="brush__flip-face" r="14" />
+          {/* 가운데 거울선, 왼쪽은 채운 삼각형, 오른쪽은 비춰진 빈 삼각형 */}
+          <path className="brush__flip-mirror" d="M 0 -9 V 9" />
+          <path className="brush__flip-solid" d="M -2.5 -6 L -9 6 L -2.5 6 Z" />
+          <path className="brush__flip-outline" d="M 2.5 -6 L 9 6 L 2.5 6 Z" />
         </g>
       </g>
     </svg>
