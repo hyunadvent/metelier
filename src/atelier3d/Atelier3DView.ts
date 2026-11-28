@@ -90,6 +90,8 @@ export interface Atelier3DEvents {
   onWallPictureSelect(id: string | null): void;
   /** 벽 그림이 바뀌었을 때 (걸기, 옮기기, 치우기). 저장은 받는 쪽이 한다. */
   onWallChange(wall: WallPicture[]): void;
+  /** 캐릭터가 걷기 시작했을 때 (바닥을 누름, 키보드, 다른 활동으로 가기). 하던 꾸미기를 마친다. */
+  onCharacterMove(): void;
   /** 바꿀 수 있는 화분을 눌렀을 때 */
   onPlantSpot(slot: PlantSlot): void;
   /** 아직 준비 중인 활동을 눌렀을 때 */
@@ -324,6 +326,18 @@ export class Atelier3DView {
     void this.refreshEasel();
   }
 
+  /**
+   * 캐릭터가 움직이면 그림 벽 꾸미기를 마친다 ("다 했어요" 와 같다).
+   * 고른 그림을 풀고, 화면에도 알려 그림 고르는 창과 꾸미기 막대를 닫게 한다.
+   */
+  private finishWallEditing(): void {
+    if (this.wallSelection !== null) {
+      this.selectWallPicture(null);
+      this.events.onWallPictureSelect(null);
+    }
+    this.events.onCharacterMove();
+  }
+
   /** 고른 그림을 살짝 앞으로 내밀어 보여 준다. null 이면 풀기. */
   selectWallPicture(id: string | null): void {
     this.wallSelection = id;
@@ -377,6 +391,7 @@ export class Atelier3DView {
   // ── 행동 ───────────────────────────────────────
 
   private walkTo(target: Ground, onArrive: (() => void) | null = null): void {
+    this.finishWallEditing();
     this.wallFocusZ = null;
     if (this.activity) this.standUp();
     this.wait = null;
@@ -677,6 +692,7 @@ export class Atelier3DView {
     const keyDir = this.keyDirection();
     if (keyDir) {
       // 키보드로 걷는 동안에는 눌러서 정한 목적지를 잊는다.
+      this.finishWallEditing();
       if (this.activity) this.standUp();
       this.target = null;
       this.onArrive = null;

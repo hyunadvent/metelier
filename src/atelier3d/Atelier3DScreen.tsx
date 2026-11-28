@@ -73,6 +73,8 @@ export function Atelier3DScreen({ startSeated, onStartColoring }: Atelier3DScree
           onCamera: () => setPhotoOpen(true),
           onGalleryWall: () => setWallPickerOpen(true),
           onWallPictureSelect: setWallSelected,
+          // 걷기 시작하면 그림 벽 꾸미기를 마친다 ("다 했어요" 와 같다)
+          onCharacterMove: () => setWallPickerOpen(false),
           onWallChange: (wall) =>
             setDecor((previous) => {
               const next = { ...previous, wall };
