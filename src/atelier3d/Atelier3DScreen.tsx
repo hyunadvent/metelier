@@ -5,6 +5,7 @@ import { WallPicker } from './WallPicker';
 import { LoginNudge, UserButton } from '../auth/UserButton';
 import { onRemoteApplied } from '../storage/changes';
 import { useSync } from '../sync/SyncContext';
+import { isTouchDevice } from '../app/device';
 import type { Activity } from './room';
 import { PaintingPicker } from '../photo/PaintingPicker';
 import { PhotoDialog } from '../photo/PhotoDialog';
@@ -21,8 +22,10 @@ interface Atelier3DScreenProps {
 }
 
 
-const HINTS: Record<Activity | 'none', string> = {
+const HINTS: Record<Activity | 'none' | 'touch', string> = {
   none: '바닥을 누르거나 WASD로 걷기 · 캐릭터나 스페이스로 점프 · 끌어서 둘러보기',
+  /** 터치 기기에서 서 있을 때 */
+  touch: '왼쪽 끌기: 걷기 · 오른쪽 끌기: 둘러보기 · 두 손가락: 확대 · 캐릭터 누르기: 점프',
   paint: '이젤을 눌러 색칠할 그림을 고르세요',
   tea: '창밖을 보며 차를 마시고 있어요 · 바닥을 누르면 일어나요',
   read: '책을 읽고 있어요 · 바닥을 누르면 일어나요',
@@ -45,6 +48,8 @@ export function Atelier3DScreen({ startSeated, onStartColoring }: Atelier3DScree
   /** 그림 벽에서 고른 그림 (옮기거나 치우는 중) */
   const [wallSelected, setWallSelected] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  /** 손가락으로 쓰는 기기인가 (휴대폰, 태블릿): 안내 문구와 조작이 다르다 */
+  const [touch] = useState(isTouchDevice);
   /** 이젤 캔버스에 올라 있는 그림 (누르면 이어서 칠한다) */
   const [easelPainting, setEaselPainting] = useState<string | null>(null);
   const { status: syncStatus } = useSync();
@@ -165,7 +170,7 @@ export function Atelier3DScreen({ startSeated, onStartColoring }: Atelier3DScree
   }, [toast]);
 
   return (
-    <div className="atelier atelier3d" data-seated={activity === 'paint'} data-activity={activity ?? 'none'}>
+    <div className="atelier atelier3d" data-seated={activity === 'paint'} data-activity={activity ?? 'none'} data-touch={touch}>
       <div className="atelier__canvas" ref={hostRef} />
       <header className="atelier__top">
         <div className="atelier__pill">Metelier</div>
@@ -185,8 +190,10 @@ export function Atelier3DScreen({ startSeated, onStartColoring }: Atelier3DScree
           {easelPainting && (activity === 'paint' || activity === null)
             ? activity === 'paint'
               ? '캔버스를 누르면 이어서 칠해요 · 이젤 표시로 다른 그림 고르기'
-              : `${HINTS.none} · 캔버스를 누르면 이어서 칠해요`
-            : HINTS[activity ?? 'none']}
+              : `${touch ? HINTS.touch : HINTS.none} · 캔버스를 누르면 이어서 칠해요`
+            : activity === null && touch
+              ? HINTS.touch
+              : HINTS[activity ?? 'none']}
         </p>
       )}
       {wallSelected && (

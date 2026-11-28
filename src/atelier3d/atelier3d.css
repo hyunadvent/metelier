@@ -234,3 +234,88 @@
   background: #6fb7e9;
   animation: sync-pulse 0.8s ease-in-out infinite alternate;
 }
+
+/* ── 터치: 가상 조이스틱 ───────────────────────── */
+
+.atelier3d__stick {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 112px;
+  height: 112px;
+  border-radius: 50%;
+  border: 3px solid rgb(255 250 242 / 85%);
+  background: rgb(91 70 54 / 22%);
+  box-shadow: 0 4px 12px rgb(91 70 54 / 20%);
+  pointer-events: none;
+}
+
+.atelier3d__stick-knob {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 46px;
+  height: 46px;
+  margin: -23px 0 0 -23px;
+  border-radius: 50%;
+  background: #fffaf2;
+  box-shadow: 0 2px 6px rgb(91 70 54 / 30%);
+}
+
+/* ── 작은 화면 (휴대폰) ───────────────────────── */
+
+@media (max-width: 600px) {
+  .atelier3d .atelier__top {
+    top: 10px;
+    left: 10px;
+  }
+
+  .atelier3d .atelier__pill {
+    padding: 7px 13px;
+    font-size: 15px;
+  }
+
+  .atelier3d__account {
+    top: 10px;
+    right: 10px;
+  }
+
+  .atelier3d__account .user-button {
+    min-height: 36px;
+    padding: 6px 14px;
+    font-size: 14px;
+  }
+
+  .atelier3d__account .user-button--signed-in {
+    padding: 4px 12px 4px 4px;
+  }
+
+  .atelier3d__account .user-button__avatar {
+    width: 28px;
+    height: 28px;
+  }
+
+  .atelier3d__account .user-button__name {
+    max-width: 84px;
+  }
+
+  .atelier3d__loading {
+    top: 56px;
+    right: 10px;
+  }
+
+  .atelier3d__spot {
+    width: 44px;
+    height: 44px;
+    font-size: 20px;
+  }
+
+  .atelier3d .atelier__hint {
+    bottom: 12px;
+    max-width: calc(100% - 24px);
+    padding: 8px 14px;
+    border-radius: 16px;
+    font-size: 12px;
+    line-height: 1.45;
+  }
+}

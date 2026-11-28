@@ -17,6 +17,9 @@ import { loadEaselPicture } from './easelPicture';
 import {
   approachCamera,
   clampDestination,
+  fovForAspect,
+  stickFrom,
+  type Stick,
   distanceInsideBox,
   isOnCharacter,
   JUMP_SPEED,
@@ -41,6 +44,10 @@ import {
 const WALK_SPEED = 2.6;
 /** 이만큼(픽셀) 넘게 끌면 누르기가 아니라 둘러보기로 본다. */
 const DRAG_THRESHOLD = 6;
+/** 터치: 이만큼(픽셀) 끌면 가상 조이스틱이 끝까지 기운다 */
+const STICK_RADIUS = 56;
+/** 터치로 둘러볼 때의 빠르기 (마우스보다 조금 빠르게: 손가락은 짧게 움직인다) */
+const TOUCH_LOOK = { azimuth: 0.0052, polar: 0.0042 };
 /** 책장 앞에서 책을 고르는 시간 (초) */
 const BROWSE_TIME = 0.9;
 /** 활동마다 앉은 자세와, 그 자리를 가리키는 표시 */
@@ -139,6 +146,20 @@ export class Atelier3DView {
   private polar = 1.2;
   private distance = CAMERA.startDistance;
   private drag: { id: number; x: number; y: number; moved: boolean } | null = null;
+  /**
+   * 터치: 손가락마다 하는 일. 화면 왼쪽을 누르면 걷기(조이스틱), 오른쪽을 누르면 둘러보기.
+   * 두 손가락이면 벌리고 오므려 확대·축소한다.
+   */
+  private readonly touches = new Map<
+    number,
+    { role: 'move' | 'look'; startX: number; startY: number; x: number; y: number; moved: boolean }
+  >();
+  /** 두 손가락 사이의 거리 (확대·축소 중이 아니면 null) */
+  private pinch: number | null = null;
+  /** 가상 조이스틱의 기울기 (걷는 중이 아니면 null) */
+  private stick: Stick | null = null;
+  private readonly stickBase = document.createElement('div');
+  private readonly stickKnob = document.createElement('div');
   /** 벽 그림을 끌고 있는 중. offset 은 누른 곳과 그림 가운데의 차이 */
   private pictureDrag: { pointer: number; id: string; x: number; y: number; moved: boolean; offset: { z: number; y: number } } | null = null;
   private wall: WallPicture[];
@@ -193,6 +214,12 @@ export class Atelier3DView {
     // 활동 표시: 3D 위치를 따라다니는 버튼
     this.spotLayer.className = 'atelier3d__spots';
     host.appendChild(this.spotLayer);
+    // 터치로 걸을 때 손가락 아래에 보이는 조이스틱
+    this.stickBase.className = 'atelier3d__stick';
+    this.stickKnob.className = 'atelier3d__stick-knob';
+    this.stickBase.appendChild(this.stickKnob);
+    this.stickBase.style.display = 'none';
+    host.appendChild(this.stickBase);
     for (const hotspot of this.room.hotspots) {
       const el = document.createElement('button');
       el.className = 'atelier3d__spot';
@@ -430,6 +457,7 @@ export class Atelier3DView {
     this.renderer.forceContextLoss();
     canvas.remove();
     this.spotLayer.remove();
+    this.stickBase.remove();
   }
 
   // ── 행동 ───────────────────────────────────────
@@ -558,6 +586,10 @@ export class Atelier3DView {
   // ── 입력 ───────────────────────────────────────
 
   private onPointerDown = (e: PointerEvent): void => {
+    if (e.pointerType === 'touch' && !this.pictureDrag && this.touches.size > 0) {
+      this.touchDown(e);
+      return;
+    }
     if (this.drag || this.pictureDrag || (e.pointerType === 'mouse' && e.button !== 0)) return;
     // 벽 그림을 누르면 둘러보기 대신 그림을 끈다
     const picture = this.wallPictureUnder(e.clientX, e.clientY);
@@ -572,6 +604,10 @@ export class Atelier3DView {
       }
       return;
     }
+    if (e.pointerType === 'touch') {
+      this.touchDown(e);
+      return;
+    }
     this.drag = { id: e.pointerId, x: e.clientX, y: e.clientY, moved: false };
     try {
       this.renderer.domElement.setPointerCapture(e.pointerId);
@@ -580,7 +616,83 @@ export class Atelier3DView {
     }
   };
 
+  // ── 터치 ───────────────────────────────────────
+
+  private touchDown(e: PointerEvent): void {
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    const role = e.clientX - rect.left < rect.width / 2 ? 'move' : 'look';
+    this.touches.set(e.pointerId, { role, startX: e.clientX, startY: e.clientY, x: e.clientX, y: e.clientY, moved: false });
+    try {
+      this.renderer.domElement.setPointerCapture(e.pointerId);
+    } catch {
+      // 캡처가 안 되는 포인터여도 계속한다.
+    }
+    if (this.touches.size === 2) {
+      // 두 손가락: 걷기와 둘러보기를 멈추고 확대·축소한다
+      const [a, b] = [...this.touches.values()];
+      this.pinch = Math.hypot(a.x - b.x, a.y - b.y);
+      this.endStick();
+    }
+  }
+
+  private touchMove(e: PointerEvent): boolean {
+    const t = this.touches.get(e.pointerId);
+    if (!t) return false;
+    const dx = e.clientX - t.x;
+    const dy = e.clientY - t.y;
+    t.x = e.clientX;
+    t.y = e.clientY;
+    if (!t.moved && Math.hypot(t.x - t.startX, t.y - t.startY) < DRAG_THRESHOLD) return true;
+    t.moved = true;
+    if (this.pinch !== null) {
+      if (this.touches.size < 2) return true;
+      const [a, b] = [...this.touches.values()];
+      const now = Math.hypot(a.x - b.x, a.y - b.y);
+      if (now > 0 && this.pinch > 0) {
+        this.cameraGoal = null;
+        this.distance = Math.min(CAMERA.maxDistance, Math.max(CAMERA.minDistance, this.distance * (this.pinch / now)));
+      }
+      this.pinch = now;
+      return true;
+    }
+    if (t.role === 'look') {
+      this.cameraGoal = null;
+      this.azimuth -= dx * TOUCH_LOOK.azimuth;
+      this.polar = Math.min(CAMERA.maxPolar, Math.max(CAMERA.minPolar, this.polar - dy * TOUCH_LOOK.polar));
+    } else {
+      this.stick = stickFrom({ x: t.startX, y: t.startY }, { x: t.x, y: t.y }, STICK_RADIUS);
+      this.showStick(t.startX, t.startY);
+    }
+    return true;
+  }
+
+  private touchUp(e: PointerEvent): boolean {
+    const t = this.touches.get(e.pointerId);
+    if (!t) return false;
+    this.touches.delete(e.pointerId);
+    const wasPinch = this.pinch !== null;
+    if (this.touches.size < 2) this.pinch = null;
+    if (t.role === 'move') this.endStick();
+    // 끌지 않고 톡 누른 것: 마우스로 누른 것과 같다 (캔버스, 캐릭터 점프, 바닥으로 걷기)
+    if (!t.moved && !wasPinch && this.touches.size === 0) this.tapAt(e.clientX, e.clientY);
+    return true;
+  }
+
+  private showStick(x: number, y: number): void {
+    const rect = this.host.getBoundingClientRect();
+    const s = this.stick ?? { x: 0, y: 0 };
+    this.stickBase.style.display = '';
+    this.stickBase.style.transform = `translate(${x - rect.left}px, ${y - rect.top}px) translate(-50%, -50%)`;
+    this.stickKnob.style.transform = `translate(${s.x * STICK_RADIUS}px, ${s.y * STICK_RADIUS}px)`;
+  }
+
+  private endStick(): void {
+    this.stick = null;
+    this.stickBase.style.display = 'none';
+  }
+
   private onPointerMove = (e: PointerEvent): void => {
+    if (e.pointerType === 'touch' && this.touchMove(e)) return;
     const p = this.pictureDrag;
     if (p && e.pointerId === p.pointer) {
       if (!p.moved && Math.hypot(e.clientX - p.x, e.clientY - p.y) < DRAG_THRESHOLD) return;
@@ -612,6 +724,7 @@ export class Atelier3DView {
   };
 
   private onPointerUp = (e: PointerEvent): void => {
+    if (e.pointerType === 'touch' && this.touchUp(e)) return;
     const p = this.pictureDrag;
     if (p && e.pointerId === p.pointer) {
       this.pictureDrag = null;
@@ -631,7 +744,12 @@ export class Atelier3DView {
     if (!d || e.pointerId !== d.id) return;
     this.drag = null;
     if (d.moved) return;
-    // 캐릭터를 누르면 점프한다 (키보드가 없는 터치 기기에서 뛰는 방법).
+    this.tapAt(e.clientX, e.clientY);
+  };
+
+  /** 끌지 않고 누른 곳: 이젤 캔버스, 캐릭터(점프), 바닥(걷기) */
+  private tapAt(clientX: number, clientY: number): void {
+    const e = { clientX, clientY };
     // 이젤 캔버스를 누르면: 올라 있는 그림을 이어서 칠하고, 비어 있으면 그림을 고른다
     if (this.isBoardAt(e.clientX, e.clientY)) {
       this.openEasel(this.easelPaintingId);
@@ -643,9 +761,14 @@ export class Atelier3DView {
     }
     const ground = this.groundAt(e.clientX, e.clientY);
     if (ground) this.walkTo(clampDestination(ground, this.room));
-  };
+  }
 
-  private onPointerCancel = (): void => {
+  private onPointerCancel = (e?: PointerEvent): void => {
+    if (e?.pointerType === 'touch') {
+      this.touches.delete(e.pointerId);
+      if (this.touches.size < 2) this.pinch = null;
+      this.endStick();
+    }
     this.drag = null;
     if (this.pictureDrag?.moved) {
       // 끌던 그림은 마지막 자리에 둔다
@@ -682,13 +805,24 @@ export class Atelier3DView {
 
   private onBlur = (): void => {
     this.keys.clear();
+    this.touches.clear();
+    this.pinch = null;
+    this.endStick();
   };
 
   /** 누르고 있는 이동 키의 방향 (카메라 기준). 없으면 null. */
-  private keyDirection(): Ground | null {
+  /** 누르고 있는 이동 키나 기울인 조이스틱의 방향 (카메라 기준). speed 는 0~1. 없으면 null. */
+  private keyDirection(): (Ground & { speed: number }) | null {
     const has = (...names: string[]) => names.some((n) => this.keys.has(n));
-    const forward = (has('w', 'arrowup', 'ㅈ') ? 1 : 0) - (has('s', 'arrowdown', 'ㄴ') ? 1 : 0);
-    const right = (has('d', 'arrowright', 'ㅇ') ? 1 : 0) - (has('a', 'arrowleft', 'ㅁ') ? 1 : 0);
+    let forward = (has('w', 'arrowup', 'ㅈ') ? 1 : 0) - (has('s', 'arrowdown', 'ㄴ') ? 1 : 0);
+    let right = (has('d', 'arrowright', 'ㅇ') ? 1 : 0) - (has('a', 'arrowleft', 'ㅁ') ? 1 : 0);
+    let speed = 1;
+    if (!forward && !right && this.stick && (this.stick.x || this.stick.y)) {
+      // 조이스틱: 위로 밀면 앞으로. 조금 기울이면 천천히 걷는다
+      forward = -this.stick.y;
+      right = this.stick.x;
+      speed = Math.max(0.35, Math.hypot(forward, right));
+    }
     if (!forward && !right) return null;
     // 카메라는 캐릭터의 (sin az, cos az) 쪽에 있으므로 앞은 그 반대 방향이다.
     const sin = Math.sin(this.azimuth);
@@ -696,7 +830,7 @@ export class Atelier3DView {
     const x = -sin * forward + cos * right;
     const z = -cos * forward - sin * right;
     const len = Math.hypot(x, z);
-    return { x: x / len, z: z / len };
+    return { x: x / len, z: z / len, speed };
   }
 
   // ── 매 프레임 ──────────────────────────────────
@@ -706,6 +840,8 @@ export class Atelier3DView {
     const height = Math.max(1, this.host.clientHeight);
     this.renderer.setSize(width, height);
     this.camera.aspect = width / height;
+    // 휴대폰처럼 세로로 긴 화면에서는 가로 시야가 좁아지지 않도록 시야각을 넓힌다
+    this.camera.fov = fovForAspect(this.camera.aspect);
     this.camera.updateProjectionMatrix();
   }
 
@@ -749,7 +885,7 @@ export class Atelier3DView {
       this.onArrive = null;
       this.wait = null;
       this.wallFocusZ = null;
-      const step = WALK_SPEED * dt;
+      const step = WALK_SPEED * keyDir.speed * dt;
       const wanted = { x: this.position.x + keyDir.x * step, z: this.position.z + keyDir.z * step };
       this.position = clampDestination(wanted, this.room);
       this.heading = Math.atan2(keyDir.x, keyDir.z);

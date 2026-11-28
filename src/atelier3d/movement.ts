@@ -151,3 +151,33 @@ export function isOnCharacter(tap: ScreenPoint, feet: ScreenPoint, head: ScreenP
   const t = lenSq > 0 ? Math.min(1, Math.max(0, ((tap.x - feet.x) * dx + (tap.y - feet.y) * dy) / lenSq)) : 0;
   return Math.hypot(tap.x - (feet.x + t * dx), tap.y - (feet.y + t * dy)) <= radius + padding;
 }
+
+/** 가상 조이스틱의 기울기. 누른 곳에서 끈 거리를 반지름으로 나눈 값 (길이는 0~1). */
+export interface Stick {
+  x: number;
+  y: number;
+}
+
+/**
+ * 누른 곳(start)에서 손가락(now)까지 끈 만큼의 조이스틱 기울기.
+ * 반지름보다 멀리 끌어도 길이는 1 이고, 아주 조금 끈 것(dead zone)은 0 으로 본다.
+ */
+export function stickFrom(start: { x: number; y: number }, now: { x: number; y: number }, radius: number, deadZone = 0.12): Stick {
+  const dx = (now.x - start.x) / radius;
+  const dy = (now.y - start.y) / radius;
+  const length = Math.hypot(dx, dy);
+  if (length < deadZone) return { x: 0, y: 0 };
+  const scale = Math.min(1, length) / length;
+  return { x: dx * scale, y: dy * scale };
+}
+
+/**
+ * 화면 비율에 맞춘 세로 시야각 (도). 가로로 넓은 화면은 기본 시야각을 쓰고,
+ * 세로로 긴 화면(휴대폰)은 가로 시야가 좁아지지 않도록 세로 시야각을 넓힌다.
+ */
+export function fovForAspect(aspect: number, baseFov = 42, baseAspect = 1.3, maxFov = 62): number {
+  if (aspect >= baseAspect) return baseFov;
+  const halfWidth = Math.tan(((baseFov / 2) * Math.PI) / 180) * baseAspect;
+  const fov = ((2 * Math.atan(halfWidth / Math.max(0.2, aspect))) * 180) / Math.PI;
+  return Math.min(maxFov, fov);
+}

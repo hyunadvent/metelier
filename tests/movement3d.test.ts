@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   approachCamera,
   clampDestination,
+  fovForAspect,
+  stickFrom,
   distanceInsideBox,
   isOnCharacter,
   JUMP_GRAVITY,
@@ -145,5 +147,29 @@ describe('캐릭터 누르기', () => {
     expect(isOnCharacter({ x: 460, y: 440 }, feet, head, 30)).toBe(false);
     expect(isOnCharacter({ x: 400, y: 320 }, feet, head, 30)).toBe(false);
     expect(isOnCharacter({ x: 400, y: 560 }, feet, head, 30)).toBe(false);
+  });
+});
+
+describe('터치 조작', () => {
+  it('조이스틱은 끈 거리를 반지름으로 나눈 만큼 기울고, 끝까지 끌면 길이가 1 이다', () => {
+    const half = stickFrom({ x: 100, y: 100 }, { x: 100, y: 72 }, 56);
+    expect(half.x).toBeCloseTo(0);
+    expect(half.y).toBeCloseTo(-0.5);
+    const far = stickFrom({ x: 0, y: 0 }, { x: 300, y: 400 }, 56);
+    expect(Math.hypot(far.x, far.y)).toBeCloseTo(1);
+    expect(far.x / far.y).toBeCloseTo(0.75);
+  });
+
+  it('아주 조금 끈 것은 움직이지 않는다', () => {
+    expect(stickFrom({ x: 0, y: 0 }, { x: 3, y: 2 }, 56)).toEqual({ x: 0, y: 0 });
+  });
+
+  it('가로 화면은 기본 시야각을, 세로로 긴 화면은 넓힌 시야각을 쓴다', () => {
+    expect(fovForAspect(16 / 9)).toBe(42);
+    const portrait = fovForAspect(375 / 812);
+    expect(portrait).toBeGreaterThan(42);
+    expect(portrait).toBeLessThanOrEqual(62);
+    expect(fovForAspect(1)).toBeGreaterThan(42);
+    expect(fovForAspect(1)).toBeLessThan(portrait);
   });
 });
