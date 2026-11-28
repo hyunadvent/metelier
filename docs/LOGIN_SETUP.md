@@ -42,7 +42,16 @@ Supabase 는 카카오 로그인을 기본으로 지원한다 (Authentication �
 카카오 개발자 콘솔에서 앱을 만들고 REST API 키와 Client Secret 을 넣은 뒤,
 `src/auth/auth.ts` 의 `LOGIN_PROVIDERS` 에서 카카오의 `available` 을 `true` 로 바꾸면 된다.
 
-## 5. 사내 네트워크
+## 5. 배포 (GitHub Pages)
+
+- 주소: https://hyunadvent.github.io/metelier/
+- main 에 올라오면 `.github/workflows/deploy.yml` 이 빌드해서 배포한다.
+- 처음 한 번 저장소에서 할 일:
+  1. Settings → Pages → Build and deployment → Source 를 **GitHub Actions** 로 바꾼다.
+  2. Settings → Secrets and variables → Actions → **Variables** 에 `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` 를 넣는다 (공개 키. service_role 키는 넣지 않는다). 없으면 로그인 버튼이 "준비 중" 으로 보인다.
+- 배포 주소에서 로그인하려면 Supabase → Authentication → URL Configuration 의 Redirect URLs 에 `https://hyunadvent.github.io/metelier/**` 를 더한다. 배포본을 주로 쓰면 Site URL 도 배포 주소로 바꾼다.
+
+## 6. 사내 네트워크
 
 회사 샌드박스 환경에서는 허용된 도메인만 접속된다. 개발 중 실제 로그인을 시험하려면
 `<프로젝트>.supabase.co`, `accounts.google.com` 접속이 필요하므로 도메인 등록을 요청한다.

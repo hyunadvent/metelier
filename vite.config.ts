@@ -61,6 +61,8 @@ function paintingEditorSave(): Plugin {
 }
 
 export default defineConfig({
+  // 배포 주소의 앞부분. GitHub Pages 는 https://<사용자>.github.io/metelier/ 에서 열리므로 배포할 때 BASE_PATH=/metelier/ 로 빌드한다.
+  base: process.env.BASE_PATH || '/',
   plugins: [react(), paintingEditorSave()],
   // three 와 그 부가 모듈이 개발 서버에서 따로 묶여 three 가 두 번 불러와지는 것을 막는다.
   resolve: { dedupe: ['three'] },
