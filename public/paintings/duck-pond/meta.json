@@ -1,0 +1,610 @@
+{
+  "id": "duck-pond",
+  "title": "연못의 오리 가족",
+  "width": 2048,
+  "height": 1639,
+  "files": {
+    "regions": "regions.png",
+    "lines": "lines.png",
+    "reference": "reference.png"
+  },
+  "palette": [
+    {
+      "number": 1,
+      "color": "#B0DCFA"
+    },
+    {
+      "number": 2,
+      "color": "#8FCBF2"
+    },
+    {
+      "number": 3,
+      "color": "#AADA8C"
+    },
+    {
+      "number": 4,
+      "color": "#FFFFFF"
+    },
+    {
+      "number": 5,
+      "color": "#7CC47A"
+    },
+    {
+      "number": 6,
+      "color": "#FFE27A"
+    },
+    {
+      "number": 7,
+      "color": "#CFEAFC"
+    },
+    {
+      "number": 8,
+      "color": "#FFD866"
+    },
+    {
+      "number": 9,
+      "color": "#E3E8F0"
+    },
+    {
+      "number": 10,
+      "color": "#B9794B"
+    },
+    {
+      "number": 11,
+      "color": "#FFC94D"
+    },
+    {
+      "number": 12,
+      "color": "#FFA24D"
+    },
+    {
+      "number": 13,
+      "color": "#FBC4D6"
+    },
+    {
+      "number": 14,
+      "color": "#FAAAC4"
+    }
+  ],
+  "regions": [
+    {
+      "id": 1,
+      "name": "칸 1",
+      "number": 1,
+      "pixels": 1159856,
+      "label": {
+        "x": 872,
+        "y": 463,
+        "size": 64
+      }
+    },
+    {
+      "id": 2,
+      "name": "칸 2",
+      "number": 4,
+      "pixels": 57046,
+      "label": {
+        "x": 1152,
+        "y": 181,
+        "size": 64
+      }
+    },
+    {
+      "id": 3,
+      "name": "칸 3",
+      "number": 8,
+      "pixels": 34758,
+      "label": {
+        "x": 1782,
+        "y": 219,
+        "size": 64
+      }
+    },
+    {
+      "id": 4,
+      "name": "칸 4",
+      "number": 4,
+      "pixels": 83931,
+      "label": {
+        "x": 439,
+        "y": 250,
+        "size": 64
+      }
+    },
+    {
+      "id": 5,
+      "name": "칸 5",
+      "number": 5,
+      "pixels": 87846,
+      "label": {
+        "x": 1767,
+        "y": 627,
+        "size": 64
+      }
+    },
+    {
+      "id": 6,
+      "name": "칸 6",
+      "number": 10,
+      "pixels": 6450,
+      "label": {
+        "x": 299,
+        "y": 537,
+        "size": 18
+      }
+    },
+    {
+      "id": 7,
+      "name": "칸 7",
+      "number": 5,
+      "pixels": 33492,
+      "label": {
+        "x": 480,
+        "y": 679,
+        "size": 50
+      }
+    },
+    {
+      "id": 8,
+      "name": "칸 8",
+      "number": 5,
+      "pixels": 8116,
+      "label": {
+        "x": 271,
+        "y": 668,
+        "size": 19
+      }
+    },
+    {
+      "id": 9,
+      "name": "칸 9",
+      "number": 5,
+      "pixels": 16583,
+      "label": {
+        "x": 130,
+        "y": 692,
+        "size": 52
+      }
+    },
+    {
+      "id": 10,
+      "name": "칸 10",
+      "number": 10,
+      "pixels": 6361,
+      "label": {
+        "x": 219,
+        "y": 638,
+        "size": 18
+      }
+    },
+    {
+      "id": 11,
+      "name": "칸 11",
+      "number": 10,
+      "pixels": 6439,
+      "label": {
+        "x": 382,
+        "y": 685,
+        "size": 18
+      }
+    },
+    {
+      "id": 12,
+      "name": "칸 12",
+      "number": 3,
+      "pixels": 676552,
+      "label": {
+        "x": 1912,
+        "y": 891,
+        "size": 64
+      }
+    },
+    {
+      "id": 13,
+      "name": "칸 13",
+      "number": 3,
+      "pixels": 14212,
+      "label": {
+        "x": 340,
+        "y": 821,
+        "size": 31
+      }
+    },
+    {
+      "id": 14,
+      "name": "칸 14",
+      "number": 3,
+      "pixels": 18130,
+      "label": {
+        "x": 258,
+        "y": 791,
+        "size": 30
+      }
+    },
+    {
+      "id": 15,
+      "name": "칸 15",
+      "number": 2,
+      "pixels": 837165,
+      "label": {
+        "x": 1279,
+        "y": 1001,
+        "size": 64
+      }
+    },
+    {
+      "id": 16,
+      "name": "칸 16",
+      "number": 13,
+      "pixels": 4229,
+      "label": {
+        "x": 1619,
+        "y": 862,
+        "size": 18
+      }
+    },
+    {
+      "id": 17,
+      "name": "칸 17",
+      "number": 4,
+      "pixels": 26666,
+      "label": {
+        "x": 935,
+        "y": 938,
+        "size": 52
+      }
+    },
+    {
+      "id": 18,
+      "name": "칸 18",
+      "number": 14,
+      "pixels": 1824,
+      "label": {
+        "x": 1578,
+        "y": 859,
+        "size": 18
+      }
+    },
+    {
+      "id": 19,
+      "name": "칸 19",
+      "number": 14,
+      "pixels": 1783,
+      "label": {
+        "x": 1661,
+        "y": 859,
+        "size": 18
+      }
+    },
+    {
+      "id": 20,
+      "name": "칸 20",
+      "number": 5,
+      "pixels": 11095,
+      "label": {
+        "x": 1577,
+        "y": 934,
+        "size": 19
+      }
+    },
+    {
+      "id": 21,
+      "name": "칸 21",
+      "number": 12,
+      "pixels": 3131,
+      "label": {
+        "x": 1082,
+        "y": 946,
+        "size": 18
+      }
+    },
+    {
+      "id": 22,
+      "name": "칸 22",
+      "number": 5,
+      "pixels": 6668,
+      "label": {
+        "x": 269,
+        "y": 1105,
+        "size": 18
+      }
+    },
+    {
+      "id": 23,
+      "name": "칸 23",
+      "number": 5,
+      "pixels": 5741,
+      "label": {
+        "x": 371,
+        "y": 1104,
+        "size": 18
+      }
+    },
+    {
+      "id": 24,
+      "name": "칸 24",
+      "number": 4,
+      "pixels": 50176,
+      "label": {
+        "x": 954,
+        "y": 1075,
+        "size": 47
+      }
+    },
+    {
+      "id": 25,
+      "name": "칸 25",
+      "number": 2,
+      "pixels": 6337,
+      "label": {
+        "x": 266,
+        "y": 1006,
+        "size": 23
+      }
+    },
+    {
+      "id": 26,
+      "name": "칸 26",
+      "number": 4,
+      "pixels": 4568,
+      "label": {
+        "x": 604,
+        "y": 1022,
+        "size": 18
+      }
+    },
+    {
+      "id": 27,
+      "name": "칸 27",
+      "number": 9,
+      "pixels": 20246,
+      "label": {
+        "x": 762,
+        "y": 1053,
+        "size": 30
+      }
+    },
+    {
+      "id": 28,
+      "name": "칸 28",
+      "number": 6,
+      "pixels": 6678,
+      "label": {
+        "x": 1681,
+        "y": 1088,
+        "size": 24
+      }
+    },
+    {
+      "id": 29,
+      "name": "칸 29",
+      "number": 12,
+      "pixels": 750,
+      "label": {
+        "x": 1753,
+        "y": 1094,
+        "size": 18
+      }
+    },
+    {
+      "id": 30,
+      "name": "칸 30",
+      "number": 6,
+      "pixels": 12656,
+      "label": {
+        "x": 1689,
+        "y": 1158,
+        "size": 21
+      }
+    },
+    {
+      "id": 31,
+      "name": "칸 31",
+      "number": 6,
+      "pixels": 9086,
+      "label": {
+        "x": 1427,
+        "y": 1166,
+        "size": 29
+      }
+    },
+    {
+      "id": 32,
+      "name": "칸 32",
+      "number": 6,
+      "pixels": 1230,
+      "label": {
+        "x": 1514,
+        "y": 1131,
+        "size": 18
+      }
+    },
+    {
+      "id": 33,
+      "name": "칸 33",
+      "number": 11,
+      "pixels": 5026,
+      "label": {
+        "x": 1593,
+        "y": 1147,
+        "size": 18
+      }
+    },
+    {
+      "id": 34,
+      "name": "칸 34",
+      "number": 6,
+      "pixels": 8968,
+      "label": {
+        "x": 369,
+        "y": 1208,
+        "size": 29
+      }
+    },
+    {
+      "id": 35,
+      "name": "칸 35",
+      "number": 7,
+      "pixels": 23579,
+      "label": {
+        "x": 680,
+        "y": 1186,
+        "size": 22
+      }
+    },
+    {
+      "id": 36,
+      "name": "칸 36",
+      "number": 12,
+      "pixels": 716,
+      "label": {
+        "x": 1504,
+        "y": 1178,
+        "size": 18
+      }
+    },
+    {
+      "id": 37,
+      "name": "칸 37",
+      "number": 6,
+      "pixels": 16950,
+      "label": {
+        "x": 1438,
+        "y": 1247,
+        "size": 25
+      }
+    },
+    {
+      "id": 38,
+      "name": "칸 38",
+      "number": 2,
+      "pixels": 1066,
+      "label": {
+        "x": 1495,
+        "y": 1197,
+        "size": 18
+      }
+    },
+    {
+      "id": 39,
+      "name": "칸 39",
+      "number": 6,
+      "pixels": 1471,
+      "label": {
+        "x": 1234,
+        "y": 1216,
+        "size": 18
+      }
+    },
+    {
+      "id": 40,
+      "name": "칸 40",
+      "number": 7,
+      "pixels": 5867,
+      "label": {
+        "x": 1552,
+        "y": 1213,
+        "size": 18
+      }
+    },
+    {
+      "id": 41,
+      "name": "칸 41",
+      "number": 12,
+      "pixels": 1032,
+      "label": {
+        "x": 285,
+        "y": 1216,
+        "size": 18
+      }
+    },
+    {
+      "id": 42,
+      "name": "칸 42",
+      "number": 11,
+      "pixels": 6786,
+      "label": {
+        "x": 1326,
+        "y": 1234,
+        "size": 18
+      }
+    },
+    {
+      "id": 43,
+      "name": "칸 43",
+      "number": 6,
+      "pixels": 16960,
+      "label": {
+        "x": 358,
+        "y": 1291,
+        "size": 25
+      }
+    },
+    {
+      "id": 44,
+      "name": "칸 44",
+      "number": 6,
+      "pixels": 1475,
+      "label": {
+        "x": 562,
+        "y": 1259,
+        "size": 18
+      }
+    },
+    {
+      "id": 45,
+      "name": "칸 45",
+      "number": 11,
+      "pixels": 6779,
+      "label": {
+        "x": 437,
+        "y": 1277,
+        "size": 18
+      }
+    },
+    {
+      "id": 46,
+      "name": "칸 46",
+      "number": 7,
+      "pixels": 7937,
+      "label": {
+        "x": 1273,
+        "y": 1311,
+        "size": 18
+      }
+    },
+    {
+      "id": 47,
+      "name": "칸 47",
+      "number": 5,
+      "pixels": 9462,
+      "label": {
+        "x": 1732,
+        "y": 1358,
+        "size": 26
+      }
+    },
+    {
+      "id": 48,
+      "name": "칸 48",
+      "number": 7,
+      "pixels": 7971,
+      "label": {
+        "x": 354,
+        "y": 1354,
+        "size": 18
+      }
+    },
+    {
+      "id": 49,
+      "name": "칸 49",
+      "number": 5,
+      "pixels": 14826,
+      "label": {
+        "x": 553,
+        "y": 1460,
+        "size": 33
+      }
+    }
+  ]
+}

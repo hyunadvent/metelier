@@ -9,6 +9,7 @@ import type { Activity } from './room';
 import { PaintingPicker } from '../photo/PaintingPicker';
 import { PhotoDialog } from '../photo/PhotoDialog';
 import { listStoredPaintings, type StoredPaintingSummary } from '../storage/db';
+import { BUILTIN_PAINTINGS } from '../coloring/builtinPaintings';
 import '../atelier/atelier.css';
 import './atelier3d.css';
 
@@ -19,12 +20,6 @@ interface Atelier3DScreenProps {
   onStartColoring(paintingId?: string): void;
 }
 
-/** 처음부터 들어 있는 그림 (고르는 창의 첫 칸) */
-const BUILTIN_PAINTING = {
-  id: 'hill-house',
-  title: '언덕 위의 집',
-  thumbnail: `${import.meta.env.BASE_URL}paintings/hill-house/reference.png`,
-};
 
 const HINTS: Record<Activity | 'none', string> = {
   none: '바닥을 누르거나 WASD로 걷기 · 캐릭터나 스페이스로 점프 · 끌어서 둘러보기',
@@ -70,9 +65,10 @@ export function Atelier3DScreen({ startSeated, onStartColoring }: Atelier3DScree
           onActivityChange: setActivity,
           onEasel: () => {
             // 사진으로 만든 그림이 있으면 고르게 하고, 없으면 기본 그림을 바로 연다
+            // 처음부터 들어 있는 그림과 사진으로 만든 그림 가운데 고른다
             listStoredPaintings()
               .catch(() => [])
-              .then((photos) => (photos.length > 0 ? setChoices(photos) : startRef.current()));
+              .then(setChoices);
           },
           onCamera: () => setPhotoOpen(true),
           onGalleryWall: () => setWallPickerOpen(true),
@@ -248,7 +244,7 @@ export function Atelier3DScreen({ startSeated, onStartColoring }: Atelier3DScree
       )}
       {choices && (
         <PaintingPicker
-          builtin={BUILTIN_PAINTING}
+          builtins={BUILTIN_PAINTINGS}
           photos={choices}
           onPick={(id) => onStartColoring(id)}
           onClose={() => setChoices(null)}

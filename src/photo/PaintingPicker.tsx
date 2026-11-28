@@ -1,10 +1,11 @@
 import { useState } from 'react';
+import { builtinThumbnail, type BuiltinPainting } from '../coloring/builtinPaintings';
 import { deleteStoredPainting, type StoredPaintingSummary } from '../storage/db';
 import './photoDialog.css';
 
 interface PaintingPickerProps {
-  /** 처음부터 들어 있는 그림 */
-  builtin: { id: string; title: string; thumbnail: string };
+  /** 처음부터 들어 있는 그림들 */
+  builtins: BuiltinPainting[];
   /** 사진으로 만든 그림들 */
   photos: StoredPaintingSummary[];
   onPick(paintingId: string): void;
@@ -14,7 +15,7 @@ interface PaintingPickerProps {
 }
 
 /** 이젤을 눌렀을 때, 칠할 수 있는 그림이 여러 장이면 열리는 창. */
-export function PaintingPicker({ builtin, photos, onPick, onClose, onChange }: PaintingPickerProps) {
+export function PaintingPicker({ builtins, photos, onPick, onClose, onChange }: PaintingPickerProps) {
   /** 지울지 한 번 더 묻는 중인 그림 */
   const [asking, setAsking] = useState<string | null>(null);
 
@@ -36,12 +37,14 @@ export function PaintingPicker({ builtin, photos, onPick, onClose, onChange }: P
         </button>
         <h2 className="photo-dialog__title">🎨 어떤 그림을 칠할까요?</h2>
         <ul className="painting-picker__list">
-          <li className="painting-picker__item">
-            <button className="painting-picker__open" data-painting={builtin.id} onClick={() => onPick(builtin.id)}>
-              <img src={builtin.thumbnail} alt="" />
-              <span>{builtin.title}</span>
-            </button>
-          </li>
+          {builtins.map((b) => (
+            <li key={b.id} className="painting-picker__item">
+              <button className="painting-picker__open" data-painting={b.id} onClick={() => onPick(b.id)}>
+                <img src={builtinThumbnail(b.id)} alt="" loading="lazy" />
+                <span>{b.title}</span>
+              </button>
+            </li>
+          ))}
           {photos.map((p) => (
             <li key={p.id} className="painting-picker__item">
               <button className="painting-picker__open" data-painting={p.id} onClick={() => onPick(p.id)}>
