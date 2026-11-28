@@ -48,7 +48,8 @@ const DRAG_THRESHOLD = 6;
 /** 터치: 이만큼(픽셀) 끌면 가상 조이스틱이 끝까지 기운다 */
 const STICK_RADIUS = 56;
 /** 터치로 둘러볼 때의 빠르기 (마우스보다 조금 빠르게: 손가락은 짧게 움직인다) */
-const TOUCH_LOOK = { azimuth: 0.0052, polar: 0.0042 };
+// 휴대폰 둘러보기 감도 (예전보다 20% 높임)
+const TOUCH_LOOK = { azimuth: 0.00624, polar: 0.00504 };
 /** 책장 앞에서 책을 고르는 시간 (초) */
 const BROWSE_TIME = 0.9;
 /** 활동마다 앉은 자세와, 그 자리를 가리키는 표시 */
