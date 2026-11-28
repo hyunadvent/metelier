@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import { useAuth } from '../auth/AuthContext';
+import { LoginNudge } from '../auth/UserButton';
 import type { PaintingMeta } from '../coloring/painting';
 import type { StoredPainting } from '../storage/db';
 import { packPhotoPainting, storePhotoPainting, titleFromFileName } from './photoStore';
@@ -38,9 +40,13 @@ export function PhotoDialog({ onClose, onSaved }: PhotoDialogProps) {
   const [result, setResult] = useState<StoredPainting | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const { user, loading, openLogin } = useAuth();
+  /** 로그인하지 않은 채 등록하려 할 때: 로그인을 권하는 중 */
+  const [askLogin, setAskLogin] = useState(false);
 
   const choose = async (file: File | undefined) => {
     if (!file) return;
+    setAskLogin(false);
     setError(null);
     setResult(null);
     setStage('read');
@@ -84,12 +90,18 @@ export function PhotoDialog({ onClose, onSaved }: PhotoDialogProps) {
     };
   }, [photo, level]);
 
-  const register = async () => {
+  /** 그림을 이 브라우저에 저장한다. andLogin 이면 저장한 뒤 로그인 화면을 연다. */
+  const register = async (andLogin = false) => {
     if (!result || saving) return;
+    if (!user && !loading && !askLogin && !andLogin) {
+      setAskLogin(true);
+      return;
+    }
     setSaving(true);
     try {
       await storePhotoPainting(result);
       onSaved(result.title);
+      if (andLogin) openLogin('로그인하면 등록한 그림이 저장돼 다른 기기에서도 칠할 수 있어요.');
     } catch {
       setSaving(false);
       setError('그림을 저장하지 못했습니다. 브라우저의 저장 공간이 부족할 수 있습니다.');
@@ -158,7 +170,31 @@ export function PhotoDialog({ onClose, onSaved }: PhotoDialogProps) {
           </div>
         )}
 
-        {photo && (
+        {askLogin && result && !busy && (
+          <div className="photo-dialog__ask" data-testid="photo-login-ask">
+            <p>
+              <strong>로그인하면 이 그림이 저장돼요.</strong> 로그인하지 않으면 이 브라우저에만 임시로 저장되고, 브라우저 데이터를 지우면 사라질 수
+              있어요.
+            </p>
+            <div className="photo-dialog__actions">
+              <button className="photo-dialog__button" data-testid="photo-register-anyway" disabled={saving} onClick={() => void register(false)}>
+                로그인 없이 등록
+              </button>
+              <button
+                className="photo-dialog__button photo-dialog__button--primary"
+                data-testid="photo-register-login"
+                disabled={saving}
+                onClick={() => void register(true)}
+              >
+                등록하고 로그인하기
+              </button>
+            </div>
+          </div>
+        )}
+
+        {photo && !askLogin && <LoginNudge text="로그인하면 만든 그림이 저장돼요" reason="로그인하면 사진으로 만든 그림이 저장돼 다른 기기에서도 칠할 수 있어요." />}
+
+        {photo && !askLogin && (
           <div className="photo-dialog__actions">
             <label className={`photo-dialog__button${busy || saving ? ' photo-dialog__button--disabled' : ''}`}>
               다른 사진

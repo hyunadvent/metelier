@@ -122,28 +122,28 @@ export function ColoringScreen({ paintingId, backdrop, onExit }: ColoringScreenP
   }, [paintingId, atelier]);
 
   // ── 자동 저장 ──────────────────────────────────────
-  const saveNow = useCallback(() => {
+  const saveNow = useCallback((): Promise<void> => {
     if (saveTimer.current !== null) {
       window.clearTimeout(saveTimer.current);
       saveTimer.current = null;
     }
-    if (!view || !meta) return;
-    saveSession(view, meta, completedRef.current).catch((e) => console.warn('그림을 저장하지 못했습니다.', e));
+    if (!view || !meta) return Promise.resolve();
+    return saveSession(view, meta, completedRef.current).catch((e) => console.warn('그림을 저장하지 못했습니다.', e));
   }, [view, meta]);
 
   useEffect(() => {
     onChangeRef.current = () => {
       if (saveTimer.current !== null) window.clearTimeout(saveTimer.current);
-      saveTimer.current = window.setTimeout(saveNow, SAVE_DELAY_MS);
+      saveTimer.current = window.setTimeout(() => void saveNow(), SAVE_DELAY_MS);
     };
     // 화면을 떠날 때는 기다리지 않고 바로 저장한다.
     const onHide = () => {
-      if (document.visibilityState === 'hidden' && saveTimer.current !== null) saveNow();
+      if (document.visibilityState === 'hidden' && saveTimer.current !== null) void saveNow();
     };
     document.addEventListener('visibilitychange', onHide);
     return () => {
       document.removeEventListener('visibilitychange', onHide);
-      if (saveTimer.current !== null) saveNow();
+      if (saveTimer.current !== null) void saveNow();
     };
   }, [saveNow]);
 
@@ -156,7 +156,7 @@ export function ColoringScreen({ paintingId, backdrop, onExit }: ColoringScreenP
       completedRef.current = true;
       sound.complete();
       setDialog('complete');
-      saveNow();
+      void saveNow();
     }
   }, [progress, view, saveNow]);
 
@@ -267,8 +267,7 @@ export function ColoringScreen({ paintingId, backdrop, onExit }: ColoringScreenP
                 className="icon-button"
                 aria-label="화실로 돌아가기"
                 onClick={() => {
-                  saveNow();
-                  onExit();
+                  void saveNow().then(onExit);
                 }}
               >
                 🏠

@@ -278,3 +278,17 @@
   max-height: 55%;
   pointer-events: auto;
 }
+
+.photo-dialog__ask {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 14px;
+  background: #fbe3c0;
+}
+
+.photo-dialog__ask p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.55;
+}

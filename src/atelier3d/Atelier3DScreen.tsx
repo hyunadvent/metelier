@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Atelier3DView } from './Atelier3DView';
 import { FRAME_INFO, FRAME_KINDS, loadDecor, MAX_WALL_PICTURES, PLANT_INFO, PLANT_KINDS, saveDecor, type PlantKind, type PlantSlot } from './decor';
 import { WallPicker } from './WallPicker';
+import { LoginNudge, UserButton } from '../auth/UserButton';
 import type { Activity } from './room';
 import { PaintingPicker } from '../photo/PaintingPicker';
 import { PhotoDialog } from '../photo/PhotoDialog';
@@ -146,6 +147,9 @@ export function Atelier3DScreen({ startSeated, onStartColoring }: Atelier3DScree
       <header className="atelier__top">
         <div className="atelier__pill">Metelier</div>
       </header>
+      <div className="atelier3d__account">
+        <UserButton />
+      </div>
       {error && <p className="atelier__message">{error}</p>}
       {!error && !wallSelected && (
         <p className="atelier__hint">
@@ -188,6 +192,7 @@ export function Atelier3DScreen({ startSeated, onStartColoring }: Atelier3DScree
       {plantSlot && (
         <div className="atelier3d__picker" role="dialog" aria-label="화분 고르기">
           <p className="atelier3d__picker-title">어떤 화분을 놓을까요?</p>
+          <LoginNudge text="로그인하면 꾸민 화실이 저장돼요" reason="로그인하면 꾸민 화실이 저장돼 다른 기기에서도 그대로 볼 수 있어요." />
           <div className="atelier3d__picker-options">
             {PLANT_KINDS.map((kind) => (
               <button

@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { AtelierScreen } from '../atelier/AtelierScreen';
 import { PLACEHOLDER_ATELIER } from '../atelier/scene';
 import { Atelier3DScreen } from '../atelier3d/Atelier3DScreen';
+import { useAuth } from '../auth/AuthContext';
+import { SaveLoginPrompt } from '../auth/SaveLoginPrompt';
 import { ColoringScreen } from '../coloring/ColoringScreen';
 
 const DEFAULT_PAINTING = 'hill-house';
@@ -24,6 +26,9 @@ function readLaunch(): Launch {
 
 export function App() {
   const [launch] = useState(readLaunch);
+  const { user, loading, openLogin } = useAuth();
+  /** 로그인하지 않은 채 색칠을 마치려 할 때 띄우는 안내 */
+  const [askLogin, setAskLogin] = useState(false);
   const [screen, setScreen] = useState<'atelier' | 'coloring'>(launch.painting ? 'coloring' : 'atelier');
   // 색칠을 하다가 돌아오면 의자에 앉은 채로 화실이 열린다.
   const [returning, setReturning] = useState(false);
@@ -33,16 +38,35 @@ export function App() {
     setScreen('coloring');
   };
 
+  const backToAtelier = () => {
+    setAskLogin(false);
+    setReturning(true);
+    setScreen('atelier');
+  };
+
   if (screen === 'coloring') {
     return (
-      <ColoringScreen
-        paintingId={paintingId}
-        backdrop={launch.atelier === '2d' ? { kind: '2d', layout: PLACEHOLDER_ATELIER } : { kind: '3d' }}
-        onExit={() => {
-          setReturning(true);
-          setScreen('atelier');
-        }}
-      />
+      <>
+        <ColoringScreen
+          paintingId={paintingId}
+          backdrop={launch.atelier === '2d' ? { kind: '2d', layout: PLACEHOLDER_ATELIER } : { kind: '3d' }}
+          onExit={() => {
+            // 칠한 것은 이미 이 브라우저에 저장했다. 로그인하지 않았으면 로그인을 권한다.
+            if (user || loading) backToAtelier();
+            else setAskLogin(true);
+          }}
+        />
+        {askLogin && (
+          <SaveLoginPrompt
+            onLogin={() => {
+              setAskLogin(false);
+              openLogin('로그인하면 칠하던 그림이 저장돼 다른 기기에서도 이어서 칠할 수 있어요.');
+            }}
+            onSkip={backToAtelier}
+            onClose={() => setAskLogin(false)}
+          />
+        )}
+      </>
     );
   }
   return launch.atelier === '2d' ? (

@@ -1,0 +1,295 @@
+/* ── 로그인 화면 ─────────────────────────────── */
+
+.auth-dialog {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  box-sizing: border-box;
+  background: rgb(91 70 54 / 42%);
+}
+
+.auth-dialog__card {
+  position: relative;
+  display: grid;
+  gap: 12px;
+  width: min(400px, 100%);
+  max-height: 100%;
+  overflow: auto;
+  padding: 26px 24px 22px;
+  box-sizing: border-box;
+  border-radius: 24px;
+  border: 3px solid #ecd9c2;
+  background: #fffaf2;
+  box-shadow: 0 14px 36px rgb(91 70 54 / 32%);
+  color: #5b4636;
+  text-align: center;
+}
+
+.auth-dialog__close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: #a08a78;
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.auth-dialog__logo {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 800;
+  color: #d9a56c;
+}
+
+.auth-dialog__title {
+  margin: 0;
+  font-size: 22px;
+}
+
+.auth-dialog__reason {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: #fbe3c0;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.auth-dialog__text,
+.auth-dialog__note,
+.auth-dialog__error {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.auth-dialog__note {
+  color: #8f7a68;
+  font-size: 13px;
+}
+
+.auth-dialog__error {
+  color: #c0453c;
+  font-weight: 600;
+}
+
+.auth-dialog__providers {
+  display: grid;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.auth-provider {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: 10px 16px;
+  border-radius: 12px;
+  border: 1px solid #dadce0;
+  background: #fff;
+  color: #1f1f1f;
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.auth-provider--kakao {
+  border-color: #fee500;
+  background: #fee500;
+  color: #191600;
+}
+
+.auth-provider:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.auth-provider em {
+  position: absolute;
+  right: 12px;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 700;
+  opacity: 0.8;
+}
+
+.auth-provider:focus-visible,
+.user-button:focus-visible,
+.login-nudge button:focus-visible {
+  outline: 3px solid #6fb7e9;
+  outline-offset: 2px;
+}
+
+/* ── 화실 오른쪽 위의 로그인 버튼 ───────────────── */
+
+.user-button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 8px 18px;
+  border-radius: 999px;
+  border: 2px solid #ecd9c2;
+  background: #fffaf2;
+  color: #5b4636;
+  font-family: inherit;
+  font-size: 16px;
+  font-weight: 800;
+  box-shadow: 0 3px 0 #e3c9aa;
+  cursor: pointer;
+}
+
+.user-button--loading {
+  width: 96px;
+  opacity: 0.6;
+}
+
+.user-button--signed-in {
+  padding: 5px 16px 5px 5px;
+}
+
+.user-button__avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.user-button__avatar--initial {
+  display: grid;
+  place-items: center;
+  background: #f4a24c;
+  color: #fff;
+  font-size: 15px;
+}
+
+.user-button__name {
+  max-width: 120px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.user-menu {
+  position: relative;
+}
+
+.user-menu__panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  display: grid;
+  gap: 6px;
+  min-width: 180px;
+  padding: 10px;
+  border-radius: 16px;
+  border: 2px solid #ecd9c2;
+  background: #fffaf2;
+  box-shadow: 0 10px 24px rgb(91 70 54 / 25%);
+}
+
+.user-menu__email {
+  margin: 0;
+  padding: 2px 6px;
+  overflow: hidden;
+  color: #8f7a68;
+  font-size: 13px;
+  text-overflow: ellipsis;
+}
+
+.user-menu__item {
+  padding: 9px 12px;
+  border-radius: 10px;
+  border: 0;
+  background: #fff;
+  color: #5b4636;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+
+.user-menu__item:hover {
+  background: #fbe3c0;
+}
+
+/* ── 로그인 권유 띠 ────────────────────────────── */
+
+.login-nudge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: #fbe3c0;
+  color: #5b4636;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.login-nudge button {
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 0;
+  background: #f4a24c;
+  color: #fff;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+/* ── 색칠을 마치고 돌아갈 때: 저장하려면 로그인 ───── */
+
+.save-prompt__actions {
+  display: grid;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.save-prompt__button {
+  min-height: 46px;
+  padding: 10px 16px;
+  border-radius: 14px;
+  border: 2px solid #ecd9c2;
+  background: #fff;
+  color: #5b4636;
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.save-prompt__button--primary {
+  border-color: #e0913a;
+  background: #f4a24c;
+  color: #fff;
+}
+
+.save-prompt__warning {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: #fde8e6;
+  color: #a83a32;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.5;
+}
