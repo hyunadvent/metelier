@@ -700,7 +700,7 @@ button.pill {
   position: absolute;
   right: max(16px, calc(50% - 360px));
   bottom: 112px;
-  z-index: 4;
+  /* z-index 를 주지 않는다: 붓(뒤에 놓인 요소)이 내 물감 위로 지나가며 물감을 찍을 수 있게 */
   display: grid;
   gap: 8px;
   max-width: min(320px, calc(100% - 32px));
