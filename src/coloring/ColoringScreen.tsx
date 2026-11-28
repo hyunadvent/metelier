@@ -346,13 +346,15 @@ export function ColoringScreen({ paintingId, backdrop, onExit, onSwitchPainting 
           <header className="coloring__top">
             {onExit && (
               <button
-                className="icon-button"
+                className="icon-button icon-button--labeled"
                 aria-label="화실로 돌아가기"
+                title="화실로 돌아가기"
                 onClick={() => {
                   void saveNow().then(onExit);
                 }}
               >
-                🏠
+                <span aria-hidden="true">🏠</span>
+                <span className="icon-button__label">화실</span>
               </button>
             )}
             {buffLeft > 0 && (
@@ -456,9 +458,18 @@ export function ColoringScreen({ paintingId, backdrop, onExit, onSwitchPainting 
               className={`pot pot--eraser${tool === 'eraser' ? ' pot--selected' : ''} pot--tappable`}
               data-pot="eraser"
               aria-label="지우개"
+              title="지우개"
               onClick={() => pickTool('eraser')}
             >
-              🧽
+              {/* 비스듬히 놓인 지우개: 분홍 고무에 파란 종이 띠, 아래로 지운 자국 */}
+              <svg className="pot__eraser" viewBox="0 0 40 40" aria-hidden="true">
+                <path d="M6 33 H22" stroke="#c9b6a4" strokeWidth="2.5" strokeLinecap="round" strokeDasharray="1 4" />
+                <g transform="rotate(-38 20 20)">
+                  <rect x="5" y="14" width="30" height="13" rx="3.5" fill="#f6a5b8" stroke="#8a5a4a" strokeWidth="2" />
+                  <rect x="18" y="14" width="10" height="13" fill="#7fb2e5" stroke="#8a5a4a" strokeWidth="2" />
+                  <path d="M8 17.5 H15" stroke="#fff" strokeOpacity="0.7" strokeWidth="2" strokeLinecap="round" />
+                </g>
+              </svg>
             </div>
             {/* 나만의 물감: 화실 책상의 팔레트에서 만든 색 */}
             <button
