@@ -140,6 +140,8 @@ export function Atelier3DScreen({ startSeated, onStartColoring }: Atelier3DScree
   useEffect(
     () =>
       onRemoteApplied((kinds) => {
+        // 다른 기기에서 칠한 것을 받으면 이젤의 그림도 바꾼다
+        if (kinds.has('progress') || kinds.has('painting')) void viewRef.current?.refreshEasel();
         // 작품만 새로 받았어도 벽에 걸린 그림이 보이도록 다시 건다
         if (!kinds.has('decor') && !kinds.has('gallery')) return;
         const next = loadDecor();

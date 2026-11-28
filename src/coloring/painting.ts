@@ -93,6 +93,21 @@ async function fromFiles(meta: PaintingMeta, urls: { regions: string; lines: str
   };
 }
 
+/** 그림의 크기와 선화 주소만 (칸 지도를 읽지 않으므로 가볍다). 없는 그림이면 null */
+export async function loadPaintingLook(id: string): Promise<{ width: number; height: number; linesUrl: string } | null> {
+  if (isPhotoPaintingId(id)) {
+    const stored = await loadStoredPainting(id);
+    if (!stored) return null;
+    const meta = stored.meta as PaintingMeta;
+    return { width: meta.width, height: meta.height, linesUrl: stored.lines };
+  }
+  const baseUrl = `${import.meta.env.BASE_URL}paintings/${id}/`;
+  const response = await fetch(`${baseUrl}meta.json`);
+  if (!response.ok) return null;
+  const meta = (await response.json()) as PaintingMeta;
+  return { width: meta.width, height: meta.height, linesUrl: baseUrl + meta.files.lines };
+}
+
 export async function loadPainting(id: string): Promise<LoadedPainting> {
   if (isPhotoPaintingId(id)) {
     const stored = await loadStoredPainting(id);

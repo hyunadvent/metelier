@@ -82,6 +82,8 @@ export interface AtelierRoom extends WalkArea {
   board: THREE.Mesh;
   /** 캔버스 판의 가로세로 비율을 그림에 맞춘다. */
   setBoardAspect(aspect: number): void;
+  /** 이젤의 캔버스에 그림을 올린다 (칠하던 그림). null 이면 빈 캔버스. 텍스처는 부르는 쪽이 정리한다. */
+  setBoardPicture(texture: THREE.Texture | null, aspect?: number): void;
   hotspots: Hotspot3D[];
   /** 그 자리의 화분을 다른 화분으로 바꾼다 (꾸미기). */
   setPlant(slot: PlantSlot, kind: PlantKind): void;
@@ -672,6 +674,18 @@ export function buildAtelierRoom(decor: AtelierDecor = DEFAULT_DECOR): AtelierRo
     clamp.position.y = 0.03 + h + 0.05;
   };
   setBoardAspect(4 / 3);
+  // 캔버스 앞면에 붙이는 그림. 판의 크기를 따라가도록 판에 붙인다 (판의 앞면은 +z).
+  const boardPictureMaterial = keep(new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1 }));
+  const boardPicture = new THREE.Mesh(keep(new THREE.PlaneGeometry(1, 1)), boardPictureMaterial);
+  boardPicture.position.z = 0.0185;
+  boardPicture.visible = false;
+  board.add(boardPicture);
+  const setBoardPicture = (texture: THREE.Texture | null, aspect?: number) => {
+    boardPictureMaterial.map = texture;
+    boardPictureMaterial.needsUpdate = true;
+    boardPicture.visible = texture !== null;
+    setBoardAspect(texture && aspect ? aspect : 4 / 3);
+  };
   contact(EASEL.x, EASEL.z - 0.1, 1.7, 1.5);
 
   // ── 의자: 캔버스 정면에 놓는다 ─────────────────
@@ -1121,6 +1135,7 @@ export function buildAtelierRoom(decor: AtelierDecor = DEFAULT_DECOR): AtelierRo
     bookshelfFront: { x: halfW - 1.3, z: -1.25 },
     board,
     setBoardAspect,
+    setBoardPicture,
     hotspots: [
       { id: 'easel', label: '이젤', icon: '🎨', position: new THREE.Vector3(EASEL.x, 2.12, EASEL.z), available: true },
       { id: 'stool', label: '의자', icon: '🪑', position: new THREE.Vector3(stoolAt.x, 0.9, stoolAt.z), available: true },

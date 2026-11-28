@@ -13,6 +13,7 @@ import {
   type WallPicture,
 } from './decor';
 import { WallImageCache } from './wallImages';
+import { loadEaselPicture } from './easelPicture';
 import {
   approachCamera,
   clampDestination,
@@ -138,6 +139,10 @@ export class Atelier3DView {
   private readonly wallImages = new WallImageCache();
   private readonly raycaster = new THREE.Raycaster();
   private destroyed = false;
+  /** 이젤에 올린 그림의 텍스처 (바꿀 때 정리한다) */
+  private easelTexture: THREE.Texture | null = null;
+  /** 이젤 그림을 마지막으로 부탁한 차례 (늦게 끝난 옛 요청이 새 그림을 덮지 않게) */
+  private easelRequest = 0;
   /** 옮기는 중인 벽 그림. 이때는 그림 벽 표시를 숨긴다 (그림 위를 가리지 않게) */
   private wallSelection: string | null = null;
   /** 그림 벽 앞으로 갈 때 캐릭터가 서는 자리의 z. 다른 곳으로 걸어가면 잊는다. */
@@ -160,6 +165,7 @@ export class Atelier3DView {
     this.room = buildAtelierRoom(decor);
     this.wall = decor.wall;
     void this.rebuildWall();
+    void this.refreshEasel();
     this.scene.add(this.room.group, this.character.group);
 
     const canvas = this.renderer.domElement;
@@ -233,6 +239,22 @@ export class Atelier3DView {
       if (image) views.push({ picture, image });
     });
     this.room.setWallPictures(views);
+  }
+
+  /** 칠하던 그림을 이젤의 캔버스에 올린다. 칠하던 그림이 없으면 빈 캔버스. */
+  async refreshEasel(): Promise<void> {
+    const request = ++this.easelRequest;
+    const picture = await loadEaselPicture().catch((e: unknown) => {
+      console.warn('이젤 그림을 만들지 못했습니다.', e);
+      return null;
+    });
+    if (this.destroyed || request !== this.easelRequest) {
+      picture?.texture.dispose();
+      return;
+    }
+    this.room.setBoardPicture(picture?.texture ?? null, picture?.aspect);
+    this.easelTexture?.dispose();
+    this.easelTexture = picture?.texture ?? null;
   }
 
   /** 그림 벽 쪽으로 걸어가서 벽을 바라본다. */
@@ -329,6 +351,7 @@ export class Atelier3DView {
   destroy(): void {
     this.destroyed = true;
     this.wallImages.dispose();
+    this.easelTexture?.dispose();
     cancelAnimationFrame(this.frame);
     this.resizeObserver.disconnect();
     const canvas = this.renderer.domElement;
