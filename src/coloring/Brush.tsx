@@ -248,6 +248,10 @@ export function Brush({ view, palette, tool, onDip, onEmptyStroke, onPaint, cue 
     if (d.mode === 'paint') {
       view.endStroke();
       setAngle(ANGLE);
+      // 칠하던 붓끝을 물감 위에 놓고 떼면, 칠하기를 마친 뒤 그 물감을 묻힌다
+      readPots();
+      insidePot.current = null;
+      checkDip();
     }
     drag.current = { mode: 'idle', pointerId: -1, dx: 0, dy: 0, stroking: false };
     rootRef.current?.removeAttribute('data-dragging');
@@ -297,8 +301,9 @@ export function Brush({ view, palette, tool, onDip, onEmptyStroke, onPaint, cue 
         <rect className="brush__cue brush__cue--handle" x="66" y="-17" width="196" height="34" rx="17" />
 
         {/* 잡는 영역: 손잡이(이동) 위에 붓털(칠하기)을 겹쳐 둔다 */}
-        <rect className="brush__handle" x="52" y="-26" width="212" height="52" rx="26" {...handlers('move')} />
-        <ellipse className="brush__bristle" cx="18" cy="0" rx="38" ry="30" {...handlers('paint')} />
+        {/* 나무 손잡이만 이동, 붓털과 쇠테까지는 칠하기 (휴대폰에서 손가락으로 붓끝을 잡기 쉽게 넓게 잡는다) */}
+        <rect className="brush__handle" x="76" y="-26" width="188" height="52" rx="26" {...handlers('move')} />
+        <rect className="brush__bristle" x="-32" y="-32" width="108" height="64" rx="30" {...handlers('paint')} />
 
         {/* 손잡이 끝의 뒤집기 표시 (좌우 대칭 아이콘): 누르면 붓이 반대 방향으로 기울어진다.
             붓의 기울기만큼 되돌려 화면에서 똑바로 서 보이게 한다 */}
