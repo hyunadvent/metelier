@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { AtelierLayout } from '../atelier/scene';
 import { EaselBackdrop, type ScreenRect } from '../atelier3d/EaselBackdrop';
 import { Brush } from './Brush';
+import { StardustOverlay } from './StardustOverlay';
 import { useHintsDone } from '../app/useHintsDone';
 import { brushScale, onPaintBuff, paintBuffLeft } from '../app/paintBuff';
 import { CompleteDialog, ConfirmDialog, GalleryDialog } from './dialogs';
@@ -208,6 +209,8 @@ export function ColoringScreen({ paintingId, backdrop, onExit }: ColoringScreenP
     };
   }, [dialog, view]);
 
+  const paperRect = useCallback(() => paperRef.current?.paper ?? null, []);
+
   // ── 색칠 버프: 걸려 있는 동안 붓 범위 2배, 남은 시간 표시 ──
   useEffect(() => {
     const tick = () => {
@@ -309,6 +312,8 @@ export function ColoringScreen({ paintingId, backdrop, onExit }: ColoringScreenP
       {/* 화실 배경 자리: 3D 화실이면 여기에 이젤 앞 시점이 그려진다. */}
       <div className="coloring__backdrop" ref={backdropHostRef} />
       <div className="coloring__canvas" ref={hostRef} />
+      {/* 색칠 버프가 걸려 있는 동안 캔버스 위로 떨어지는 별가루 */}
+      <StardustOverlay active={buffLeft > 0} paperRect={paperRect} />
 
       {error && <p className="coloring__message">{error}</p>}
       {!error && !meta && <p className="coloring__message">그림을 불러오는 중…</p>}

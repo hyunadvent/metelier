@@ -645,3 +645,12 @@
     font-size: 15px;
   }
 }
+
+/* 색칠 버프 별가루: 캔버스 위, 붓과 버튼 아래. 누르는 것을 막지 않는다 */
+.coloring__stardust {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
