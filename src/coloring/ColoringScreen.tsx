@@ -11,7 +11,6 @@ import { sound } from './sound';
 import { ColoringView } from './view/ColoringView';
 import './coloring.css';
 
-const ZOOM_STEP = 1.5;
 const WHEEL_SENSITIVITY = 0.0015;
 /** 칠이 바뀐 뒤 이만큼 기다렸다가 저장한다. */
 const SAVE_DELAY_MS = 1200;
@@ -47,7 +46,6 @@ export function ColoringScreen({ paintingId, backdrop, onExit }: ColoringScreenP
   const [painting, setPainting] = useState<LoadedPainting | null>(null);
   const [tool, setTool] = useState<Tool | null>(null);
   const [progress, setProgress] = useState({ filled: 0, total: 0 });
-  const [zoom, setZoom] = useState(1);
   const [history, setHistory] = useState({ undo: false, redo: false });
   const [settings, setSettings] = useState<Settings>(loadSettings);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -95,7 +93,8 @@ export function ColoringScreen({ paintingId, backdrop, onExit }: ColoringScreenP
         if (cancelled) return;
         const v = await ColoringView.create(host, loaded, {
           onProgress: (filled, total) => setProgress({ filled, total }),
-          onZoom: setZoom,
+          // 확대·축소 버튼을 없앴으므로 배율은 보여 주지 않는다 (휠·두 손가락으로 확대)
+          onZoom: () => {},
           onHistory: (undo, redo) => setHistory({ undo, redo }),
           onChange: () => onChangeRef.current(),
           onLayout: (paper, width, height) => {
@@ -309,14 +308,6 @@ export function ColoringScreen({ paintingId, backdrop, onExit }: ColoringScreenP
               </button>
               <button aria-label="다시 하기" disabled={!history.redo} onClick={() => view.redo()}>
                 ↷
-              </button>
-            </div>
-            <div className="segmented" role="group" aria-label="확대·축소">
-              <button aria-label="축소" disabled={zoom <= 1} onClick={() => view.zoomBy(1 / ZOOM_STEP)}>
-                −
-              </button>
-              <button aria-label="확대" disabled={zoom >= 5} onClick={() => view.zoomBy(ZOOM_STEP)}>
-                +
               </button>
             </div>
             <button
