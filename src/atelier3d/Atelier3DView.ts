@@ -145,6 +145,13 @@ export class Atelier3DView {
   private easelTexture: THREE.Texture | null = null;
   /** 이젤 그림을 마지막으로 부탁한 차례 (늦게 끝난 옛 요청이 새 그림을 덮지 않게) */
   private easelRequest = 0;
+  /** 그림자를 다시 그려야 하는가 (캐릭터가 움직이거나 방의 물건이 바뀌었을 때만 그린다) */
+  private shadowDirty = true;
+  /** 그림자를 마지막으로 그린 뒤 지난 시간 (초) */
+  private shadowAge = 0;
+  private readonly lastCharacter = new THREE.Matrix4();
+  /** 활동 표시 버튼마다 마지막으로 쓴 위치와 보임 (같으면 다시 쓰지 않는다) */
+  private readonly spotStyle = new Map<HTMLElement, string>();
   /** 옮기는 중인 벽 그림. 이때는 그림 벽 표시를 숨긴다 (그림 위를 가리지 않게) */
   private wallSelection: string | null = null;
   /** 그림 벽 앞으로 갈 때 캐릭터가 서는 자리의 z. 다른 곳으로 걸어가면 잊는다. */
@@ -165,6 +172,8 @@ export class Atelier3DView {
 
     const decor = loadDecor();
     this.room = buildAtelierRoom(decor);
+    // 그림자는 매 프레임이 아니라 무언가 움직였을 때만 다시 그린다 (흐린 그림자 계산이 무겁다)
+    this.renderer.shadowMap.autoUpdate = false;
     this.wall = decor.wall;
     void this.rebuildWall();
     void this.refreshEasel();
@@ -218,6 +227,7 @@ export class Atelier3DView {
   /** 서버에서 받은 꾸밈을 화실에 다시 보여 준다 (화분과 그림 벽). */
   applyDecor(decor: AtelierDecor): void {
     for (const slot of Object.keys(decor.plants) as PlantSlot[]) this.room.setPlant(slot, decor.plants[slot]);
+    this.shadowDirty = true;
     this.wall = decor.wall;
     if (this.wallSelection && !this.wall.some((p) => p.id === this.wallSelection)) this.selectWallPicture(null);
     void this.rebuildWall();
@@ -227,6 +237,7 @@ export class Atelier3DView {
   /** 꾸미기: 그 자리의 화분을 바꾼다. */
   setPlant(slot: PlantSlot, kind: PlantKind): void {
     this.room.setPlant(slot, kind);
+    this.shadowDirty = true;
   }
 
   // ── 그림 벽 ────────────────────────────────────
@@ -242,6 +253,7 @@ export class Atelier3DView {
       if (image) views.push({ picture, image });
     });
     this.room.setWallPictures(views);
+    this.shadowDirty = true;
   }
 
   /** 마지막으로 칠한 그림을 이젤의 캔버스에 올린다. 그림 벽에 건 그림은 올리지 않는다. 없으면 빈 캔버스. */
@@ -257,6 +269,7 @@ export class Atelier3DView {
       return;
     }
     this.room.setBoardPicture(picture?.texture ?? null, picture?.aspect);
+    this.shadowDirty = true;
     this.easelTexture?.dispose();
     this.easelTexture = picture?.texture ?? null;
   }
@@ -342,6 +355,7 @@ export class Atelier3DView {
   selectWallPicture(id: string | null): void {
     this.wallSelection = id;
     this.room.highlightWallPicture(id);
+    this.shadowDirty = true;
   }
 
   /** 화면 위의 점(-1~1 정규 좌표)이 가리키는 그림 벽 위의 자리. 벽 쪽을 보고 있지 않으면 null. */
@@ -384,6 +398,8 @@ export class Atelier3DView {
     this.room.dispose();
     this.character.dispose();
     this.renderer.dispose();
+    // 화실과 색칠 화면을 오갈 때마다 WebGL 연결이 쌓이지 않게 바로 돌려준다
+    this.renderer.forceContextLoss();
     canvas.remove();
     this.spotLayer.remove();
   }
@@ -548,7 +564,10 @@ export class Atelier3DView {
       }
       const ndc = this.toNdc(e.clientX, e.clientY);
       const point = this.wallPointAt(ndc.x, ndc.y);
-      if (point) this.room.moveWallPicture(p.id, point.z - p.offset.z, point.y - p.offset.y);
+      if (point) {
+        this.room.moveWallPicture(p.id, point.z - p.offset.z, point.y - p.offset.y);
+        this.shadowDirty = true;
+      }
       return;
     }
     const d = this.drag;
@@ -756,6 +775,20 @@ export class Atelier3DView {
       if (arrived) this.cameraGoal = null;
     }
     this.placeCamera(Math.min(1, dt * 6));
+    // 캐릭터가 움직였거나 방이 바뀌었으면 그림자를 다시 그린다
+    g.updateMatrixWorld();
+    // 숨 쉬기처럼 작은 움직임은 0.5초마다만 그림자에 반영한다
+    this.shadowAge += dt;
+    if (this.shadowAge > 0.5) this.shadowDirty = true;
+    if (!g.matrixWorld.equals(this.lastCharacter) || this.character.animating) {
+      this.lastCharacter.copy(g.matrixWorld);
+      this.shadowDirty = true;
+    }
+    if (this.shadowDirty) {
+      this.renderer.shadowMap.needsUpdate = true;
+      this.shadowDirty = false;
+      this.shadowAge = 0;
+    }
     this.outline.render(this.scene, this.camera);
     this.placeSpots();
   };
@@ -772,13 +805,23 @@ export class Atelier3DView {
         p.z > 1 ||
         (this.activity !== null && hotspot.id === ACTIVITY_SPOT[this.activity]) ||
         (hotspot.id === 'gallery-wall' && this.wallSelection !== null);
-      el.style.display = hidden ? 'none' : '';
-      if (hidden) continue;
+      if (hidden) {
+        if (this.spotStyle.get(el) !== 'none') {
+          el.style.display = 'none';
+          this.spotStyle.set(el, 'none');
+        }
+        continue;
+      }
       // 앉아 있으면 이젤이, 서 있으면 의자가 눈에 띄게 움직인다.
       const emphasized = this.activity === 'paint' ? hotspot.id === 'easel' : this.activity === null && hotspot.id === 'stool';
       const x = (p.x * 0.5 + 0.5) * width;
       const y = (-p.y * 0.5 + 0.5) * height;
-      el.style.transform = `translate(${x}px, ${y}px) translate(-50%, -50%) scale(${emphasized ? pulse : 1})`;
+      const transform = `translate(${Math.round(x)}px, ${Math.round(y)}px) translate(-50%, -50%) scale(${emphasized ? pulse.toFixed(3) : 1})`;
+      if (this.spotStyle.get(el) !== transform) {
+        if (this.spotStyle.get(el) === 'none' || !this.spotStyle.has(el)) el.style.display = '';
+        el.style.transform = transform;
+        this.spotStyle.set(el, transform);
+      }
     }
   }
 }

@@ -197,6 +197,11 @@ export class Character3D {
     this.head.rotation.set(0, 0, 0);
   }
 
+  /** 팔다리를 크게 움직이는 중인가 (걷기, 점프). 그림자를 매 프레임 다시 그려야 한다. */
+  get animating(): boolean {
+    return this.pose === 'walk' || this.wasAirborne;
+  }
+
   /** 자세가 달라졌을 때만 바꾼다 (매 프레임 불러도 된다). */
   setPoseIfChanged(pose: Pose3D): void {
     if (this.pose !== pose) this.setPose(pose);

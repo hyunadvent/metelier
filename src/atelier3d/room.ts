@@ -112,7 +112,8 @@ function noOutline<T extends THREE.Material>(material: T): T {
 
 /** 화실을 그리는 렌더러의 공통 설정: 부드러운 그림자와, 밝은 곳이 하얗게 날아가지 않는 색 처리 */
 export function configureRenderer(renderer: THREE.WebGLRenderer): void {
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  // 외곽선 효과가 화면을 두 번 그리므로, 고해상도 화면에서도 1.5배까지만 그린다
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.VSMShadowMap;
   renderer.toneMapping = THREE.NeutralToneMapping;

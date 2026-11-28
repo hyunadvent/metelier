@@ -56,7 +56,7 @@ export interface WriteOptions {
 }
 
 const DB_NAME = 'metelier';
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 const PAINTINGS = 'paintings';
 const TOMBSTONES = 'tombstones';
 const PROGRESS = 'progress';
@@ -72,6 +72,9 @@ function openDb(): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains(PROGRESS)) db.createObjectStore(PROGRESS, { keyPath: 'paintingId' });
       if (!db.objectStoreNames.contains(GALLERY)) db.createObjectStore(GALLERY, { keyPath: 'paintingId' });
       if (!db.objectStoreNames.contains(PAINTINGS)) db.createObjectStore(PAINTINGS, { keyPath: 'id' });
+      // 사진 그림의 만든 때로 찾는 색인: 그림 파일(몇 MB)을 읽지 않고 목록만 얻는다
+      const paintings = request.transaction!.objectStore(PAINTINGS);
+      if (!paintings.indexNames.contains('createdAt')) paintings.createIndex('createdAt', 'createdAt');
       if (!db.objectStoreNames.contains(TOMBSTONES)) db.createObjectStore(TOMBSTONES, { keyPath: 'id' });
     };
     request.onsuccess = () => {
@@ -163,9 +166,22 @@ export async function saveStoredPainting(painting: StoredPainting, options?: Wri
   await changed('painting', painting.id, options);
 }
 
-/** 사진 그림 전부 (그림 파일까지). 동기화가 쓴다. */
-export function listStoredPaintingsFull(): Promise<StoredPainting[]> {
-  return run<StoredPainting[]>(PAINTINGS, 'readonly', (s) => s.getAll());
+/** 사진 그림의 이름표와 만든 때만. 그림 파일을 읽지 않으므로 가볍다 (동기화가 쓴다). */
+export async function listStoredPaintingTimes(): Promise<{ id: string; createdAt: number }[]> {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(PAINTINGS, 'readonly');
+    const out: { id: string; createdAt: number }[] = [];
+    const request = tx.objectStore(PAINTINGS).index('createdAt').openKeyCursor();
+    request.onsuccess = () => {
+      const cursor = request.result;
+      if (!cursor) return;
+      out.push({ id: String(cursor.primaryKey), createdAt: Number(cursor.key) });
+      cursor.continue();
+    };
+    tx.oncomplete = () => resolve(out);
+    tx.onerror = () => reject(tx.error);
+  });
 }
 
 export function loadStoredPainting(id: string): Promise<StoredPainting | undefined> {

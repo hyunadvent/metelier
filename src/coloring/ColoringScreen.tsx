@@ -13,7 +13,7 @@ import './coloring.css';
 const ZOOM_STEP = 1.5;
 const WHEEL_SENSITIVITY = 0.0015;
 /** 칠이 바뀐 뒤 이만큼 기다렸다가 저장한다. */
-const SAVE_DELAY_MS = 600;
+const SAVE_DELAY_MS = 1200;
 
 type DialogKind = 'complete' | 'gallery' | 'reset' | null;
 

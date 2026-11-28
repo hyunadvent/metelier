@@ -4,6 +4,7 @@ import { PLACEHOLDER_ATELIER } from '../atelier/scene';
 import { Atelier3DScreen } from '../atelier3d/Atelier3DScreen';
 import { useAuth } from '../auth/AuthContext';
 import { SaveLoginPrompt } from '../auth/SaveLoginPrompt';
+import { useSync } from '../sync/SyncContext';
 import { ColoringScreen } from '../coloring/ColoringScreen';
 
 const DEFAULT_PAINTING = 'hill-house';
@@ -27,6 +28,7 @@ function readLaunch(): Launch {
 export function App() {
   const [launch] = useState(readLaunch);
   const { user, loading, openLogin } = useAuth();
+  const { retry: syncNow } = useSync();
   /** 로그인하지 않은 채 색칠을 마치려 할 때 띄우는 안내 */
   const [askLogin, setAskLogin] = useState(false);
   const [screen, setScreen] = useState<'atelier' | 'coloring'>(launch.painting ? 'coloring' : 'atelier');
@@ -39,6 +41,8 @@ export function App() {
   };
 
   const backToAtelier = () => {
+    // 칠하던 것은 모아 두었다가 올리므로, 색칠을 마치면 바로 올린다
+    syncNow();
     setAskLogin(false);
     setReturning(true);
     setScreen('atelier');

@@ -99,7 +99,9 @@ export class AtelierView {
 
   destroy(): void {
     this.app.ticker.remove(this.onTick);
+    const gl = (this.app.renderer as unknown as { gl?: WebGLRenderingContext }).gl;
     this.app.destroy(true, { children: true });
+    gl?.getExtension('WEBGL_lose_context')?.loseContext();
   }
 
   private walkTo(target: Point, onArrive: (() => void) | null = null): void {

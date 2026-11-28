@@ -94,6 +94,7 @@ export class EaselBackdrop {
     this.wallImages.dispose();
     this.room.dispose();
     this.renderer.dispose();
+    this.renderer.forceContextLoss();
     this.renderer.domElement.remove();
   }
 }

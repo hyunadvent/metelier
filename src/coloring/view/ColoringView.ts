@@ -13,6 +13,9 @@ const MARGIN = { top: 76, right: 24, bottom: 136, left: 24 };
 /** 더블클릭으로 확대할 때의 배율. */
 const DOUBLE_TAP_ZOOM = 2.5;
 
+/** 칠 레이어 조각의 크기 (픽셀) */
+const TILE = 256;
+
 export interface ColoringViewEvents {
   onProgress(filled: number, total: number): void;
   onZoom(zoom: number): void;
@@ -61,7 +64,15 @@ export class ColoringView {
   private readonly paintCanvas: HTMLCanvasElement;
   private readonly paintCtx: CanvasRenderingContext2D;
   private readonly paintImage: ImageData;
-  private readonly paintTexture: Texture;
+  /**
+   * 화면에 보이는 칠 레이어는 작은 조각(타일)으로 나눠 둔다.
+   * 붓질 한 번에 그림 전체(2048 x 1639, 13MB)를 그래픽 카드로 다시 올리면 붓질이 끊기므로,
+   * 바뀐 조각만 다시 올린다.
+   */
+  private readonly tiles: { x: number; y: number; w: number; h: number; ctx: CanvasRenderingContext2D; texture: Texture }[] = [];
+  private readonly tileCols: number;
+  /** 다음 화면 그리기 전에 화면에 옮길 것이 있는가 (붓을 움직일 때마다가 아니라 한 프레임에 한 번만 옮긴다) */
+  private flushPending = false;
   private readonly labels = new Map<number, Text>();
   private readonly pointers = new Map<number, { x: number; y: number }>();
   private labelsVisible = true;
@@ -94,13 +105,30 @@ export class ColoringView {
     if (!ctx) throw new Error('2D 캔버스를 만들 수 없습니다.');
     this.paintCtx = ctx;
     this.paintImage = new ImageData(this.engine.pixels, meta.width, meta.height);
-    this.paintTexture = Texture.from(this.paintCanvas);
+    this.tileCols = Math.ceil(meta.width / TILE);
+    const paintLayer = new Container();
+    for (let ty = 0; ty < meta.height; ty += TILE) {
+      for (let tx = 0; tx < meta.width; tx += TILE) {
+        const w = Math.min(TILE, meta.width - tx);
+        const h = Math.min(TILE, meta.height - ty);
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const tileCtx = canvas.getContext('2d');
+        if (!tileCtx) throw new Error('2D 캔버스를 만들 수 없습니다.');
+        const texture = Texture.from(canvas);
+        const sprite = new Sprite(texture);
+        sprite.position.set(tx, ty);
+        paintLayer.addChild(sprite);
+        this.tiles.push({ x: tx, y: ty, w, h, ctx: tileCtx, texture });
+      }
+    }
 
     const paper = new Graphics()
       .rect(0, 0, meta.width, meta.height)
       .fill({ color: 0xfffdf8 })
       .stroke({ width: 6, color: 0xe6d3b8, alignment: 0 });
-    this.world.addChild(paper, new Sprite(this.paintTexture), new Sprite(linesTexture));
+    this.world.addChild(paper, paintLayer, new Sprite(linesTexture));
 
     for (const region of meta.regions) {
       const label = new Text({
@@ -159,9 +187,12 @@ export class ColoringView {
     this.engine.strokeTo(p.x, p.y);
   }
 
-  /** strokeToClient 를 여러 번 부른 뒤 한 번만 호출해 화면에 반영한다. */
+  /**
+   * strokeToClient 를 여러 번 부른 뒤 호출해 화면에 반영한다.
+   * 포인터는 1초에 백 번 넘게 움직일 수 있으므로, 실제로 옮기는 일은 다음 화면 그리기 직전에 한 번만 한다.
+   */
   commitStroke(): void {
-    this.flush();
+    this.flushPending = true;
   }
 
   endStroke(): void {
@@ -257,9 +288,12 @@ export class ColoringView {
     canvas.removeEventListener('pointercancel', this.onPointerUp);
     canvas.removeEventListener('dblclick', this.onDoubleClick);
     this.app.ticker.remove(this.onTick);
-    this.paintTexture.destroy(true);
+    for (const tile of this.tiles) tile.texture.destroy(true);
     void Assets.unload(this.painting.linesUrl);
+    // WebGL 연결을 바로 돌려준다: 화실과 색칠 화면을 오갈 때마다 쌓이면 브라우저가 느려진다
+    const gl = (this.app.renderer as unknown as { gl?: WebGLRenderingContext }).gl;
     this.app.destroy(true, { children: true });
+    gl?.getExtension('WEBGL_lose_context')?.loseContext();
   }
 
   private avail(): Rect {
@@ -361,6 +395,7 @@ export class ColoringView {
 
   private onTick = (): void => {
     if (this.app.screen.width !== this.layoutW || this.app.screen.height !== this.layoutH) this.layout();
+    if (this.flushPending) this.flush();
   };
 
   private onPointerDown = (e: PointerEvent): void => {
@@ -405,10 +440,29 @@ export class ColoringView {
 
   /** 엔진에서 바뀐 부분만 캔버스에 옮기고 텍스처를 갱신한다. */
   private flush(): void {
+    this.flushPending = false;
     const dirty = this.engine.takeDirty();
     if (!dirty) return;
+    // 작품 이미지를 만들 때 쓰는 전체 캔버스 (그래픽 카드로는 올리지 않는다)
     this.paintCtx.putImageData(this.paintImage, 0, 0, dirty.x, dirty.y, dirty.width, dirty.height);
-    this.paintTexture.source.update();
+    // 바뀐 곳에 걸친 조각만 고쳐서 올린다
+    const c0 = Math.floor(dirty.x / TILE);
+    const c1 = Math.floor((dirty.x + dirty.width - 1) / TILE);
+    const r0 = Math.floor(dirty.y / TILE);
+    const r1 = Math.floor((dirty.y + dirty.height - 1) / TILE);
+    for (let r = r0; r <= r1; r++) {
+      for (let c = c0; c <= c1; c++) {
+        const tile = this.tiles[r * this.tileCols + c];
+        if (!tile) continue;
+        const x0 = Math.max(dirty.x, tile.x);
+        const y0 = Math.max(dirty.y, tile.y);
+        const x1 = Math.min(dirty.x + dirty.width, tile.x + tile.w);
+        const y1 = Math.min(dirty.y + dirty.height, tile.y + tile.h);
+        if (x1 <= x0 || y1 <= y0) continue;
+        tile.ctx.putImageData(this.paintImage, -tile.x, -tile.y, x0, y0, x1 - x0, y1 - y0);
+        tile.texture.source.update();
+      }
+    }
     this.reportProgress();
   }
 

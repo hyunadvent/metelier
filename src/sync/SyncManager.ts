@@ -9,7 +9,7 @@ import {
   forgetTombstone,
   listGallery,
   listProgress,
-  listStoredPaintingsFull,
+  listStoredPaintingTimes,
   listTombstones,
   loadGalleryItem,
   loadProgress,
@@ -33,6 +33,11 @@ export type SyncStatus =
 const OWNER_KEY = 'metelier.syncOwner';
 /** 바뀐 뒤 이만큼 기다렸다가 올린다: 칠하는 동안 자꾸 올리지 않게 */
 const PUSH_DELAY_MS = 2500;
+/**
+ * 칠하던 그림은 칠하는 동안 1초마다 저장되므로, 저장할 때마다 올리면 칠하는 동안 계속 올리게 된다.
+ * 한동안 모았다가 올린다. 화면을 떠나거나(탭을 숨김, 창을 닫음) 색칠을 마치면 바로 올린다.
+ */
+const PROGRESS_PUSH_DELAY_MS = 20_000;
 /** 실패하면 이만큼 뒤에 다시 해 본다 */
 const RETRY_MS = 30_000;
 /** 한 번에 같이 받는 파일 수 */
@@ -87,8 +92,9 @@ export class SyncManager {
     }
     if (this.stopped) return;
     writeOwner(this.userId);
-    this.cleanups.push(onLocalChange(() => this.schedule(PUSH_DELAY_MS)));
-    const onFocus = () => document.visibilityState === 'visible' && this.schedule(0);
+    this.cleanups.push(onLocalChange((kind) => this.schedule(kind === 'progress' ? PROGRESS_PUSH_DELAY_MS : PUSH_DELAY_MS)));
+    // 창으로 돌아오면 받아 오고, 창을 떠나면(숨김, 닫기) 기다리던 것을 바로 올린다
+    const onFocus = () => this.schedule(0);
     const onOnline = () => this.schedule(0);
     document.addEventListener('visibilitychange', onFocus);
     window.addEventListener('online', onOnline);
@@ -106,13 +112,23 @@ export class SyncManager {
   /** 기다리던 것까지 지금 올린다 (로그아웃하기 전에) */
   async flush(): Promise<void> {
     window.clearTimeout(this.timer);
+    this.deadline = Infinity;
     await this.syncNow();
   }
 
+  /** 이때까지는 맞춰야 한다 (이미 더 이른 때로 잡혀 있으면 미루지 않는다) */
+  private deadline = Infinity;
+
   private schedule(delay: number): void {
     if (this.stopped) return;
+    const at = Date.now() + delay;
+    if (at >= this.deadline) return;
+    this.deadline = at;
     window.clearTimeout(this.timer);
-    this.timer = window.setTimeout(() => void this.syncNow(), delay);
+    this.timer = window.setTimeout(() => {
+      this.deadline = Infinity;
+      void this.syncNow();
+    }, delay);
   }
 
   private setStatus(status: SyncStatus): void {
@@ -213,7 +229,8 @@ export class SyncManager {
 
   /** 이 브라우저에 있는 것들과 그 바뀐 때 */
   private async localEntries(): Promise<LocalEntry[]> {
-    const [progress, gallery, paintings] = await Promise.all([listProgress(), listGallery(), listStoredPaintingsFull()]);
+    // 사진 그림은 그림 파일이 커서(몇 MB) 목록만 읽는다
+    const [progress, gallery, paintings] = await Promise.all([listProgress(), listGallery(), listStoredPaintingTimes()]);
     const entries: LocalEntry[] = [];
     const decorTime = decorUpdatedAt();
     if (decorTime > 0) entries.push({ kind: 'decor', key: 'main', updatedAt: decorTime });
