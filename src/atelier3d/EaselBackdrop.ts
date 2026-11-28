@@ -56,15 +56,21 @@ export class EaselBackdrop {
     host.appendChild(canvas);
   }
 
+  /** 지금 그리는 크기 (같으면 다시 맞추지 않는다: 크기를 바꾸면 캔버스를 새로 만든다) */
+  private size = { w: 0, h: 0 };
+
   /**
-   * @param paper 줌 100% 일 때 종이가 놓이는 화면 위 자리
+   * @param paper 종이가 놓인 화면 위 자리. 확대·축소하면 함께 바뀌어, 이젤 판이 늘 종이 뒤에 온다.
    */
   place(paper: ScreenRect, screenW: number, screenH: number): void {
     if (screenW < 1 || screenH < 1 || paper.height < 1) return;
     const { room, camera } = this;
-    this.renderer.setSize(screenW, screenH);
-    camera.aspect = screenW / screenH;
-    camera.updateProjectionMatrix();
+    if (this.size.w !== screenW || this.size.h !== screenH) {
+      this.size = { w: screenW, h: screenH };
+      this.renderer.setSize(screenW, screenH);
+      camera.aspect = screenW / screenH;
+      camera.updateProjectionMatrix();
+    }
 
     room.setBoardAspect(paper.width / paper.height);
     room.group.updateMatrixWorld(true);

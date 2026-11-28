@@ -31,6 +31,8 @@ export function ColoringScreen({ paintingId, backdrop, onExit }: ColoringScreenP
   const backdropHostRef = useRef<HTMLDivElement>(null);
   const backdrop3dRef = useRef<EaselBackdrop | null>(null);
   const paperRef = useRef<{ paper: ScreenRect; width: number; height: number } | null>(null);
+  /** 이젤을 종이에 다시 맞추려고 잡아 둔 다음 프레임 */
+  const followFrame = useRef(0);
   const rootRef = useRef<HTMLDivElement>(null);
   const hostRef = useRef<HTMLDivElement>(null);
   const paletteRef = useRef<HTMLElement>(null);
@@ -101,6 +103,16 @@ export function ColoringScreen({ paintingId, backdrop, onExit }: ColoringScreenP
             paperRef.current = { paper, width, height };
             backdrop3dRef.current?.place(paper, width, height);
           },
+          // 확대·축소, 옮기기: 이젤도 함께 따라와 종이가 늘 이젤 위에 있다 (한 프레임에 한 번만 다시 그린다)
+          onPaperMove: (paper, width, height) => {
+            paperRef.current = { paper, width, height };
+            if (followFrame.current) return;
+            followFrame.current = requestAnimationFrame(() => {
+              followFrame.current = 0;
+              const last = paperRef.current;
+              if (last) backdrop3dRef.current?.place(last.paper, last.width, last.height);
+            });
+          },
         }, { atelier });
         created = v;
         let completed = false;
@@ -124,6 +136,8 @@ export function ColoringScreen({ paintingId, backdrop, onExit }: ColoringScreenP
 
     return () => {
       cancelled = true;
+      cancelAnimationFrame(followFrame.current);
+      followFrame.current = 0;
       created?.destroy();
       setView(null);
       setPainting(null);

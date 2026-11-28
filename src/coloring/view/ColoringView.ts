@@ -25,6 +25,11 @@ export interface ColoringViewEvents {
   onChange(): void;
   /** 줌 100% 일 때 종이가 놓이는 화면 위 자리가 정해졌을 때. 캔버스 뒤 배경을 맞추는 데 쓴다. */
   onLayout?(paper: { x: number; y: number; width: number; height: number }, screenW: number, screenH: number): void;
+  /**
+   * 확대·축소하거나 옮겨서 종이가 화면에서 놓인 자리가 바뀌었을 때.
+   * 3D 화실 배경이 이 자리에 이젤 판을 맞춰, 확대해도 종이가 이젤 위에 있게 한다.
+   */
+  onPaperMove?(paper: { x: number; y: number; width: number; height: number }, screenW: number, screenH: number): void;
 }
 
 /**
@@ -321,6 +326,11 @@ export class ColoringView {
     this.world.scale.set(next.scale);
     this.world.position.set(next.x, next.y);
     this.engine.setRadius(BRUSH_SCREEN_RADIUS / next.scale);
+    this.events.onPaperMove?.(
+      { x: next.x, y: next.y, width: width * next.scale, height: height * next.scale },
+      this.app.screen.width,
+      this.app.screen.height,
+    );
     this.app.canvas.style.cursor = this.zoom > 1 ? 'grab' : 'default';
     this.events.onZoom(this.zoom);
   }
