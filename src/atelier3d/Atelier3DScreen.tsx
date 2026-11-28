@@ -247,6 +247,7 @@ export function Atelier3DScreen({ startSeated, onStartColoring }: Atelier3DScree
       {choices && (
         <PaintingPicker
           builtins={BUILTIN_PAINTINGS}
+          hung={new Set(decor.wall.map((p) => p.paintingId))}
           photos={choices}
           onPick={(id) => onStartColoring(id)}
           onClose={() => setChoices(null)}

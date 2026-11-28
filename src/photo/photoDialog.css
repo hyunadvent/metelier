@@ -292,3 +292,18 @@
   font-size: 14px;
   line-height: 1.55;
 }
+
+/* 그림 벽에 걸린 그림: 고를 수 없음 */
+.painting-picker__open:disabled {
+  cursor: default;
+  background: #f6efe6;
+}
+
+.painting-picker__open:disabled img {
+  opacity: 0.45;
+  filter: grayscale(0.6);
+}
+
+.painting-picker__open:disabled span {
+  color: #a08a78;
+}
