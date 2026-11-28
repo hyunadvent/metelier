@@ -52,9 +52,20 @@ export interface WallPicture {
   /** 완성작(작품집)의 그림 */
   paintingId: string;
   frame: FrameKind;
+  /** 액자 크기. 없으면 보통 */
+  size?: WallPictureSizeKind;
   z: number;
   y: number;
 }
+
+/** 벽 그림 크기: 작게, 보통, 크게 */
+export const WALL_SIZE_KINDS = ['small', 'medium', 'large'] as const;
+export type WallPictureSizeKind = (typeof WALL_SIZE_KINDS)[number];
+export const WALL_SIZE_INFO: Record<WallPictureSizeKind, { label: string; short: string; scale: number }> = {
+  small: { label: '작게', short: '작', scale: 0.72 },
+  medium: { label: '보통', short: '중', scale: 1 },
+  large: { label: '크게', short: '대', scale: 1.4 },
+};
 
 /** 그림 벽에서 액자를 걸 수 있는 범위 (액자의 바깥 테두리 기준). 아래쪽은 바닥 소품 위, 위쪽은 천장 아래. */
 export const GALLERY_WALL = { minZ: -2.1, maxZ: 7.1, minY: 1.15, maxY: 3.1 } as const;
@@ -65,9 +76,10 @@ export const FRAME_BORDER = 0.13;
 export const MAX_WALL_PICTURES = 16;
 
 /** 그림의 가로세로 비율에 맞춘 그림 크기 (액자 테두리 빼고) */
-export function wallPictureSize(aspect: number): { w: number; h: number } {
+export function wallPictureSize(aspect: number, size: WallPictureSizeKind = 'medium'): { w: number; h: number } {
   const a = Number.isFinite(aspect) && aspect > 0 ? Math.min(4, Math.max(0.25, aspect)) : 1;
-  return a >= 1 ? { w: WALL_PICTURE_SIZE, h: WALL_PICTURE_SIZE / a } : { w: WALL_PICTURE_SIZE * a, h: WALL_PICTURE_SIZE };
+  const long = WALL_PICTURE_SIZE * (WALL_SIZE_INFO[size]?.scale ?? 1);
+  return a >= 1 ? { w: long, h: long / a } : { w: long * a, h: long };
 }
 
 /** 액자가 그림 벽 밖으로 나가지 않도록 그림 가운데의 자리를 고친다. */
@@ -155,11 +167,12 @@ function parseWall(raw: unknown): WallPicture[] {
     if (typeof v.paintingId !== 'string' || !PAINTING_ID.test(v.paintingId)) continue;
     if (typeof v.z !== 'number' || typeof v.y !== 'number' || !Number.isFinite(v.z) || !Number.isFinite(v.y)) continue;
     const frame = (FRAME_KINDS as readonly unknown[]).includes(v.frame) ? (v.frame as FrameKind) : 'wood';
+    const size = (WALL_SIZE_KINDS as readonly unknown[]).includes(v.size) && v.size !== 'medium' ? (v.size as WallPictureSizeKind) : undefined;
     // 그림의 비율을 여기서는 모르므로, 가장 작은 그림이어도 벽 안에 들도록만 고친다
     const z = Math.min(GALLERY_WALL.maxZ, Math.max(GALLERY_WALL.minZ, v.z));
     const y = Math.min(GALLERY_WALL.maxY, Math.max(GALLERY_WALL.minY, v.y));
     seen.add(v.id);
-    wall.push({ id: v.id, paintingId: v.paintingId, frame, z, y });
+    wall.push({ id: v.id, paintingId: v.paintingId, frame, ...(size ? { size } : {}), z, y });
   }
   return wall;
 }

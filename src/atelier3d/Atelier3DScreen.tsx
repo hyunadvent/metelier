@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Atelier3DView } from './Atelier3DView';
-import { FRAME_INFO, FRAME_KINDS, loadDecor, MAX_WALL_PICTURES, PLANT_INFO, PLANT_KINDS, saveDecor, type PlantKind, type PlantSlot } from './decor';
+import { WALL_SIZE_INFO, WALL_SIZE_KINDS, type WallPictureSizeKind, FRAME_INFO, FRAME_KINDS, loadDecor, MAX_WALL_PICTURES, PLANT_INFO, PLANT_KINDS, saveDecor, type PlantKind, type PlantSlot } from './decor';
 import { WallPicker } from './WallPicker';
 import { LoginNudge, UserButton } from '../auth/UserButton';
 import { onRemoteApplied } from '../storage/changes';
@@ -146,6 +146,11 @@ export function Atelier3DScreen({ startSeated, onStartColoring }: Atelier3DScree
   /** 고른 벽 그림의 액자 */
   const selectedFrame = decor.wall.find((p) => p.id === wallSelected)?.frame ?? 'wood';
 
+  const selectedSize = decor.wall.find((p) => p.id === wallSelected)?.size ?? 'medium';
+  const chooseSize = (size: WallPictureSizeKind) => {
+    if (wallSelected) void viewRef.current?.setWallPictureSize(wallSelected, size);
+  };
+
   const chooseFrame = (frame: (typeof FRAME_KINDS)[number]) => {
     if (wallSelected) void viewRef.current?.setWallPictureFrame(wallSelected, frame);
   };
@@ -220,6 +225,21 @@ export function Atelier3DScreen({ startSeated, onStartColoring }: Atelier3DScree
                 data-frame={kind}
                 onClick={() => chooseFrame(kind)}
               />
+            ))}
+          </div>
+          <div className="atelier3d__sizes" role="group" aria-label="액자 크기">
+            {WALL_SIZE_KINDS.map((kind) => (
+              <button
+                key={kind}
+                className="atelier3d__size"
+                aria-label={`액자 ${WALL_SIZE_INFO[kind].label}`}
+                aria-pressed={selectedSize === kind}
+                title={`액자 ${WALL_SIZE_INFO[kind].label}`}
+                data-size={kind}
+                onClick={() => chooseSize(kind)}
+              >
+                <span className="atelier3d__size-box" aria-hidden="true" />
+              </button>
             ))}
           </div>
           <button className="atelier3d__wallbar-button" data-testid="wall-remove" onClick={removeWallPicture}>

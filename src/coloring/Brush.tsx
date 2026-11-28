@@ -8,7 +8,7 @@ const PAINTING_ANGLE = -29;
 const CLEAN_BRISTLE = '#ecd9b6';
 const EDGE = 8;
 /** 붓의 기준점에서 손잡이 끝까지의 거리 (오른쪽, 위쪽). 처음 놓을 때 손잡이가 화면 밖으로 나가지 않게 한다. */
-const HANDLE_REACH = { x: 245, y: 170 };
+const HANDLE_REACH = { x: 256, y: 178 };
 /** 위쪽 버튼 줄의 아래 끝 (처음 놓을 때 손잡이 끝이 버튼을 가리지 않게). 세로 휴대폰은 두 줄이다. */
 const topBarBottom = () => (window.innerWidth <= 600 && window.innerHeight > window.innerWidth ? 122 : 72);
 
@@ -34,13 +34,16 @@ function saveFlip(flip: boolean): void {
 const bodyTransform = (angle: number, flip: boolean) => (flip ? `scale(-1 1) rotate(${angle})` : `rotate(${angle})`);
 
 /** 붓털 모양: 평소, 그리고 종이에 대고 칠할 때 (붓 끝이 아래로 꺾여 눌린다) */
+// 붓 끝은 (-14, 0) 이다. 붓 전체를 오른쪽으로 TIP 만큼 옮겨 그려, 붓 끝이 칠하는 점(원점)에 딱 오게 한다.
+// 눌린 모양도 붓 끝은 그대로 두고, 몸통이 위로 휘어 끝이 종이 쪽으로 꺾여 보이게 한다.
+const TIP = 14;
 const TUFT = {
   rest: 'M -14 0 C -6 -9, 14 -13, 42 -12 L 42 12 C 14 13, -6 9, -14 0 Z',
-  pressed: 'M -6 13 C -12 3, 6 -12, 42 -12 L 42 12 C 26 14, 8 18, -6 13 Z',
+  pressed: 'M -14 0 C -14 -11, 0 -21, 42 -12 L 42 12 C 20 9, -2 9, -14 0 Z',
 };
 const TUFT_SHINE = {
   rest: 'M 2 -3 C 14 -6, 26 -7, 38 -7',
-  pressed: 'M -2 2 C 8 -6, 24 -8, 38 -7',
+  pressed: 'M -6 -9 C 6 -16, 26 -15, 38 -8',
 };
 
 interface Pot {
@@ -267,6 +270,7 @@ export function Brush({ view, palette, tool, onDip, onEmptyStroke, onPaint, cue 
   return (
     <svg ref={rootRef} className="brush" width="1" height="1" aria-hidden="true" data-cue={cue ?? undefined}>
       <g ref={bodyRef} transform={bodyTransform(ANGLE, flipRef.current)}>
+        <g transform={`translate(${TIP} 0)`}>
         {/* 손잡이 */}
         <path d="M 70 -11 L 250 -5 Q 259 0 250 5 L 70 11 Z" fill="#b5713c" stroke="#7a4a25" strokeWidth="2" />
         <path d="M 78 -6 L 240 -2" stroke="#d99a63" strokeWidth="3" strokeLinecap="round" />
@@ -287,10 +291,8 @@ export function Brush({ view, palette, tool, onDip, onEmptyStroke, onPaint, cue 
         <path ref={shineRef} d={TUFT_SHINE.rest} stroke="rgb(255 255 255 / 45%)" strokeWidth="2.5" strokeLinecap="round" fill="none" />
         </g>
 
-        {/* 어디를 잡을지 알려 주는 깜빡임: 손잡이 테두리, 붓 끝(칠하는 점) */}
+        {/* 어디를 잡을지 알려 주는 깜빡임: 손잡이 테두리 */}
         <rect className="brush__cue brush__cue--handle" x="66" y="-17" width="196" height="34" rx="17" />
-        <circle className="brush__cue brush__cue--tip" cx="0" cy="0" r="15" />
-        <circle className="brush__cue brush__cue--tip brush__cue--tip-dot" cx="0" cy="0" r="4" />
 
         {/* 잡는 영역: 손잡이(이동) 위에 붓털(칠하기)을 겹쳐 둔다 */}
         <rect className="brush__handle" x="52" y="-26" width="212" height="52" rx="26" {...handlers('move')} />
@@ -306,6 +308,10 @@ export function Brush({ view, palette, tool, onDip, onEmptyStroke, onPaint, cue 
           <path className="brush__flip-solid" d="M -2.5 -6 L -9 6 L -2.5 6 Z" />
           <path className="brush__flip-outline" d="M 2.5 -6 L 9 6 L 2.5 6 Z" />
         </g>
+        </g>
+        {/* 붓 끝(칠하는 점) 깜빡임: 칠해지는 자리와 같은 원점 */}
+        <circle className="brush__cue brush__cue--tip" cx="0" cy="0" r="15" />
+        <circle className="brush__cue brush__cue--tip brush__cue--tip-dot" cx="0" cy="0" r="4" />
       </g>
     </svg>
   );

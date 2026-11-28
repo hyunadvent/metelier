@@ -67,6 +67,12 @@ describe('꾸밈 합치기', () => {
     expect(stamps.removed).toEqual({ 'wall:w2': 500 });
   });
 
+  it('액자 크기만 바꿔도 바뀐 것으로 기록한다', () => {
+    const before = withWall([picture('w1')]);
+    const after = withWall([{ ...picture('w1'), size: 'large' }]);
+    expect(stampChanges(before, after, EMPTY_STAMPS, 700).changed).toEqual({ 'wall:w1': 700 });
+  });
+
   it('저장된 기록 가운데 이상한 값은 버린다', () => {
     expect(normalizeStamps({ changed: { 'wall:w1': 5, 'wall:../x': 9, 'plant:window-stand': 'a' }, removed: null })).toEqual({
       changed: { 'wall:w1': 5 },

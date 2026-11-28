@@ -34,7 +34,7 @@ export function normalizeStamps(raw: unknown): DecorStamps {
 }
 
 const sameWall = (a: WallPicture, b: WallPicture) =>
-  a.paintingId === b.paintingId && a.frame === b.frame && a.z === b.z && a.y === b.y;
+  a.paintingId === b.paintingId && a.frame === b.frame && (a.size ?? 'medium') === (b.size ?? 'medium') && a.z === b.z && a.y === b.y;
 
 /** 꾸밈을 prev 에서 next 로 바꿨을 때, 바뀐 조각의 기록을 남긴다. */
 export function stampChanges(prev: AtelierDecor, next: AtelierDecor, stamps: DecorStamps, now: number): DecorStamps {

@@ -583,7 +583,8 @@
 }
 
 .brush[data-painting='true'] .brush__tuft {
-  transform: scale(0.94, 1.08);
+  /* 세로로만 살짝 부풀린다: 가로로 줄이면 붓 끝이 칠하는 점에서 벗어난다 */
+  transform: scale(1, 1.06);
 }
 
 /* 손잡이 끝의 방향 바꾸기 화살표 */

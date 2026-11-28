@@ -11,6 +11,7 @@ import {
   type PlantKind,
   type PlantSlot,
   type WallPicture,
+  type WallPictureSizeKind,
 } from './decor';
 import { WallImageCache } from './wallImages';
 import { Stardust } from './Stardust';
@@ -378,6 +379,25 @@ export class Atelier3DView {
     this.wall = this.wall.map((p) => (p.id === id ? { ...p, frame, ...(rect ? { z: rect.z, y: rect.y } : {}) } : p));
     this.events.onWallChange(this.wall);
     await this.rebuildWall();
+    if (this.wallSelection === id) this.room.highlightWallPicture(id);
+  }
+
+  /** 벽에 건 그림의 크기를 바꾼다. 가운데 자리는 그대로 두고, 벽 밖으로 나가면 안으로 들인다. */
+  async setWallPictureSize(id: string, size: WallPictureSizeKind): Promise<void> {
+    const current = this.wall.find((p) => p.id === id);
+    if (!current || (current.size ?? 'medium') === size) return;
+    const rect = this.room.wallPictureRect(id);
+    this.wall = this.wall.map((p) => {
+      if (p.id !== id) return p;
+      const { size: _old, ...rest } = p;
+      void _old;
+      return { ...rest, ...(size !== 'medium' ? { size } : {}), ...(rect ? { z: rect.z, y: rect.y } : {}) };
+    });
+    await this.rebuildWall();
+    // 벽 밖으로 나가지 않게 고친 자리를 저장한다
+    const fixed = this.room.wallPictureRect(id);
+    if (fixed) this.wall = this.wall.map((p) => (p.id === id ? { ...p, z: fixed.z, y: fixed.y } : p));
+    this.events.onWallChange(this.wall);
     if (this.wallSelection === id) this.room.highlightWallPicture(id);
   }
 

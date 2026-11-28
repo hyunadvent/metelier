@@ -139,3 +139,26 @@ describe('액자 고르기', () => {
     expect(wall.map((w) => w.frame)).toEqual([...FRAME_KINDS]);
   });
 });
+
+describe('액자 크기', () => {
+  it('작게·크게는 보통보다 작고 크며, 비율은 그대로다', () => {
+    const medium = wallPictureSize(4 / 3);
+    const small = wallPictureSize(4 / 3, 'small');
+    const large = wallPictureSize(4 / 3, 'large');
+    expect(small.w).toBeLessThan(medium.w);
+    expect(large.w).toBeGreaterThan(medium.w);
+    expect(large.w / large.h).toBeCloseTo(4 / 3);
+    expect(medium.w).toBe(WALL_PICTURE_SIZE);
+  });
+
+  it('저장된 크기를 읽고, 보통이거나 이상한 값이면 크기를 적지 않는다', () => {
+    const wall = normalizeDecor({
+      wall: [
+        { id: 'a', paintingId: 'hill-house', frame: 'wood', size: 'large', z: 1, y: 2 },
+        { id: 'b', paintingId: 'hill-house', frame: 'wood', size: 'medium', z: 3, y: 2 },
+        { id: 'c', paintingId: 'hill-house', frame: 'wood', size: 'huge', z: 5, y: 2 },
+      ],
+    }).wall;
+    expect(wall.map((w) => w.size)).toEqual(['large', undefined, undefined]);
+  });
+});

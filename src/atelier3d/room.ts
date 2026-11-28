@@ -1012,7 +1012,7 @@ export function buildAtelierRoom(decor: AtelierDecor = DEFAULT_DECOR): AtelierRo
   };
   /** 액자 하나. 그림 앞면이 방 안쪽(+x)을 바라보도록 세운다. */
   const buildWallPicture = ({ picture, image }: WallPictureView) => {
-    const { w, h } = wallPictureSize(image.aspect);
+    const { w, h } = wallPictureSize(image.aspect, picture.size);
     const g = new THREE.Group();
     g.rotation.y = Math.PI / 2;
     g.userData.wallId = picture.id;

@@ -3,16 +3,16 @@ export interface Settings {
   sound: boolean;
   /** 칸 번호 표시 */
   numbers: boolean;
-  /** 보조 옵션: 물감을 눌러서도 고를 수 있게 한다 */
-  tapToPick: boolean;
 }
 
 const KEY = 'metelier.settings';
-const DEFAULTS: Settings = { sound: true, numbers: true, tapToPick: false };
+const DEFAULTS: Settings = { sound: true, numbers: true };
 
 export function loadSettings(): Settings {
   try {
-    return { ...DEFAULTS, ...(JSON.parse(localStorage.getItem(KEY) ?? '{}') as Partial<Settings>) };
+    // 예전에 저장한 값(물감 눌러 고르기 설정 등)은 읽지 않는다: 물감은 이제 늘 눌러서 고를 수 있다
+    const saved = JSON.parse(localStorage.getItem(KEY) ?? '{}') as Partial<Settings>;
+    return { sound: saved.sound ?? DEFAULTS.sound, numbers: saved.numbers ?? DEFAULTS.numbers };
   } catch {
     return DEFAULTS;
   }

@@ -1,9 +1,11 @@
-import { Application, Assets, BlurFilter, Container, Graphics, Sprite, Text, Texture } from 'pixi.js';
+import { Application, Assets, BlurFilter, Container, type Filter, Graphics, Sprite, Text, Texture } from 'pixi.js';
 import { createAtelierScene } from '../../atelier/AtelierScene';
 import { easelPlacement } from '../../atelier/geometry';
 import type { AtelierLayout } from '../../atelier/scene';
 import { PaintEngine, type Brush } from '../engine/PaintEngine';
 import { finishedColors } from '../finishedColors';
+import { createLowContrastOutline } from './lowContrastOutline';
+import { isLowContrast } from '../contrast';
 import { hexToRgb, type LoadedPainting } from '../painting';
 import { clampPlacement, clampZoom, fitScale, scaleAround, type Placement, type Rect } from './viewport';
 
@@ -77,6 +79,12 @@ export class ColoringView {
    */
   private readonly tiles: { x: number; y: number; w: number; h: number; ctx: CanvasRenderingContext2D; texture: Texture }[] = [];
   private readonly tileCols: number;
+  /** 칠 레이어 (흰색처럼 잘 안 보이는 색으로 칠하는 동안 테두리 효과를 건다) */
+  private paintLayer!: Container;
+  /** 지금 붓의 색이 종이 위에서 잘 안 보이는가 */
+  private lowContrast = false;
+  /** 잘 안 보이는 색을 칠하는 동안 칠한 곳 둘레에 그리는 테두리 (WebGL 이 아니면 없다) */
+  private outlineFilter: Filter | null = null;
   /** 붓 범위 배율 (색칠 버프가 걸리면 2) */
   private brushScale = 1;
   /** 다음 화면 그리기 전에 화면에 옮길 것이 있는가 (붓을 움직일 때마다가 아니라 한 프레임에 한 번만 옮긴다) */
@@ -137,6 +145,7 @@ export class ColoringView {
       .fill({ color: 0xfffdf8 })
       .stroke({ width: 6, color: 0xe6d3b8, alignment: 0 });
     this.world.addChild(paper, paintLayer, new Sprite(linesTexture));
+    this.paintLayer = paintLayer;
 
     for (const region of meta.regions) {
       const label = new Text({
@@ -180,13 +189,29 @@ export class ColoringView {
 
   setBrush(brush: Brush | null): void {
     this.engine.setBrush(brush);
+    this.lowContrast = brush?.kind === 'paint' && isLowContrast(brush.color);
+  }
+
+  /** 잘 안 보이는 색으로 칠하는 동안만 칠한 곳 둘레에 테두리를 보인다 */
+  private showOutline(on: boolean): void {
+    if (on && !this.outlineFilter && this.app.renderer.name === 'webgl') {
+      try {
+        this.outlineFilter = createLowContrastOutline();
+      } catch (e) {
+        console.warn('테두리 효과를 만들 수 없습니다.', e);
+      }
+    }
+    this.paintLayer.filters = on && this.outlineFilter ? [this.outlineFilter] : [];
   }
 
   /** 화면 좌표에서 스트로크를 시작한다. 칠할 칸이 없으면 false. */
   beginStrokeAt(clientX: number, clientY: number): boolean {
     const p = this.toWorld(clientX, clientY);
     const started = this.engine.beginStroke(p.x, p.y) !== 0;
-    if (started) this.flush();
+    if (started) {
+      this.flush();
+      if (this.lowContrast) this.showOutline(true);
+    }
     return started;
   }
 
@@ -206,6 +231,7 @@ export class ColoringView {
   endStroke(): void {
     this.engine.endStroke();
     this.flush();
+    this.showOutline(false);
     this.notifyChange();
   }
 
@@ -304,6 +330,7 @@ export class ColoringView {
     canvas.removeEventListener('dblclick', this.onDoubleClick);
     this.app.ticker.remove(this.onTick);
     for (const tile of this.tiles) tile.texture.destroy(true);
+    this.outlineFilter?.destroy();
     void Assets.unload(this.painting.linesUrl);
     // WebGL 연결을 바로 돌려준다: 화실과 색칠 화면을 오갈 때마다 쌓이면 브라우저가 느려진다
     const gl = (this.app.renderer as unknown as { gl?: WebGLRenderingContext }).gl;

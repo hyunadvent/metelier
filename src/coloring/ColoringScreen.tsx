@@ -298,7 +298,7 @@ export function ColoringScreen({ paintingId, backdrop, onExit }: ColoringScreenP
 
   const toggle = (key: keyof Settings) => (
     <label className="settings__row">
-      <span>{{ sound: '효과음', numbers: '번호 표시', tapToPick: '물감을 눌러서 고르기' }[key]}</span>
+      <span>{{ sound: '효과음', numbers: '번호 표시' }[key]}</span>
       <input
         type="checkbox"
         checked={settings[key]}
@@ -384,7 +384,6 @@ export function ColoringScreen({ paintingId, backdrop, onExit }: ColoringScreenP
             <div className="settings" role="group" aria-label="설정">
               {toggle('sound')}
               {toggle('numbers')}
-              {toggle('tapToPick')}
               <button
                 className="button button--danger"
                 onClick={() => {
@@ -397,29 +396,29 @@ export function ColoringScreen({ paintingId, backdrop, onExit }: ColoringScreenP
             </div>
           )}
 
-          {brushCue === 'handle' && <p className="coloring__hint">반짝이는 붓 손잡이를 잡고 물감에 붓끝을 담가 보세요</p>}
+          {brushCue === 'handle' && <p className="coloring__hint">반짝이는 붓 손잡이를 잡고 물감에 붓끝을 담그거나, 물감을 눌러 골라요</p>}
           {brushCue === 'tip' && <p className="coloring__hint">원하는 칸에 붓 끝을 대고 끌어서 색을 칠해요</p>}
 
           <footer className="palette" ref={paletteRef} aria-label="물감">
             {meta.palette.map((p) => (
               <div
                 key={p.number}
-                className={`pot${tool === p.number ? ' pot--selected' : ''}${settings.tapToPick ? ' pot--tappable' : ''}${done.has(p.number) ? ' pot--done' : ''}`}
+                className={`pot${tool === p.number ? ' pot--selected' : ''} pot--tappable${done.has(p.number) ? ' pot--done' : ''}`}
                 style={{ background: p.color }}
                 data-pot={p.number}
                 aria-label={`${p.number}번 물감${done.has(p.number) ? ' (다 칠했어요)' : ''}`}
                 title={done.has(p.number) ? '이 색은 다 칠했어요' : undefined}
-                onClick={settings.tapToPick ? () => pickTool(p.number) : undefined}
+                onClick={() => pickTool(p.number)}
               >
                 {p.number}
               </div>
             ))}
             <span className="palette__divider" />
             <div
-              className={`pot pot--eraser${tool === 'eraser' ? ' pot--selected' : ''}${settings.tapToPick ? ' pot--tappable' : ''}`}
+              className={`pot pot--eraser${tool === 'eraser' ? ' pot--selected' : ''} pot--tappable`}
               data-pot="eraser"
               aria-label="지우개"
-              onClick={settings.tapToPick ? () => pickTool('eraser') : undefined}
+              onClick={() => pickTool('eraser')}
             >
               🧽
             </div>
