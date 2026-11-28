@@ -1,3 +1,4 @@
+import { notifyLocalChange, type SyncKind } from './changes';
 import type { PixelEncoding } from './pixelStore';
 
 /** 칠하던 그림의 저장본. 그림마다 하나. */
@@ -39,9 +40,25 @@ export interface StoredPainting {
 /** 고르는 창에 필요한 것만 */
 export type StoredPaintingSummary = Pick<StoredPainting, 'id' | 'title' | 'createdAt' | 'thumbnail'>;
 
+/** 지운 것의 기록. 다른 기기에서도 지워지도록 동기화가 서버에 알린다. */
+export interface Tombstone {
+  /** "종류:이름표" */
+  id: string;
+  kind: SyncKind;
+  key: string;
+  deletedAt: number;
+}
+
+/** 저장할 때 고를 수 있는 것 */
+export interface WriteOptions {
+  /** 동기화가 서버에서 받아 쓰는 중이면 true: 바뀌었다고 알리지 않는다 (다시 올리지 않게) */
+  fromSync?: boolean;
+}
+
 const DB_NAME = 'metelier';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const PAINTINGS = 'paintings';
+const TOMBSTONES = 'tombstones';
 const PROGRESS = 'progress';
 const GALLERY = 'gallery';
 
@@ -55,6 +72,7 @@ function openDb(): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains(PROGRESS)) db.createObjectStore(PROGRESS, { keyPath: 'paintingId' });
       if (!db.objectStoreNames.contains(GALLERY)) db.createObjectStore(GALLERY, { keyPath: 'paintingId' });
       if (!db.objectStoreNames.contains(PAINTINGS)) db.createObjectStore(PAINTINGS, { keyPath: 'id' });
+      if (!db.objectStoreNames.contains(TOMBSTONES)) db.createObjectStore(TOMBSTONES, { keyPath: 'id' });
     };
     request.onsuccess = () => {
       // 다른 탭이 새 판으로 올리려 하면 길을 비켜 준다
@@ -87,12 +105,45 @@ export function loadProgress(paintingId: string): Promise<ProgressRecord | undef
   return run<ProgressRecord | undefined>(PROGRESS, 'readonly', (s) => s.get(paintingId));
 }
 
-export async function saveProgress(record: ProgressRecord): Promise<void> {
-  await run(PROGRESS, 'readwrite', (s) => s.put(record));
+/** 바뀐 것을 알리고, 다시 살아난 것이면 지운 기록을 없앤다. */
+async function changed(kind: SyncKind, key: string, options?: WriteOptions): Promise<void> {
+  await run(TOMBSTONES, 'readwrite', (s) => s.delete(`${kind}:${key}`));
+  if (!options?.fromSync) notifyLocalChange(kind, key);
 }
 
-export async function saveGalleryItem(item: GalleryItem): Promise<void> {
+/** 지운 것을 기록하고 알린다. */
+async function removed(kind: SyncKind, key: string, options?: WriteOptions, deletedAt = Date.now()): Promise<void> {
+  if (options?.fromSync) {
+    await run(TOMBSTONES, 'readwrite', (s) => s.delete(`${kind}:${key}`));
+    return;
+  }
+  const tombstone: Tombstone = { id: `${kind}:${key}`, kind, key, deletedAt };
+  await run(TOMBSTONES, 'readwrite', (s) => s.put(tombstone));
+  notifyLocalChange(kind, key);
+}
+
+export async function saveProgress(record: ProgressRecord, options?: WriteOptions): Promise<void> {
+  await run(PROGRESS, 'readwrite', (s) => s.put(record));
+  await changed('progress', record.paintingId, options);
+}
+
+export async function saveGalleryItem(item: GalleryItem, options?: WriteOptions): Promise<void> {
   await run(GALLERY, 'readwrite', (s) => s.put(item));
+  await changed('gallery', item.paintingId, options);
+}
+
+export function listProgress(): Promise<ProgressRecord[]> {
+  return run<ProgressRecord[]>(PROGRESS, 'readonly', (s) => s.getAll());
+}
+
+export async function deleteProgress(paintingId: string, options?: WriteOptions): Promise<void> {
+  await run(PROGRESS, 'readwrite', (s) => s.delete(paintingId));
+  await removed('progress', paintingId, options);
+}
+
+export async function deleteGalleryItem(paintingId: string, options?: WriteOptions): Promise<void> {
+  await run(GALLERY, 'readwrite', (s) => s.delete(paintingId));
+  await removed('gallery', paintingId, options);
 }
 
 export function loadGalleryItem(paintingId: string): Promise<GalleryItem | undefined> {
@@ -105,8 +156,14 @@ export async function listGallery(): Promise<GalleryItem[]> {
   return items.sort((a, b) => b.updatedAt - a.updatedAt);
 }
 
-export async function saveStoredPainting(painting: StoredPainting): Promise<void> {
+export async function saveStoredPainting(painting: StoredPainting, options?: WriteOptions): Promise<void> {
   await run(PAINTINGS, 'readwrite', (s) => s.put(painting));
+  await changed('painting', painting.id, options);
+}
+
+/** 사진 그림 전부 (그림 파일까지). 동기화가 쓴다. */
+export function listStoredPaintingsFull(): Promise<StoredPainting[]> {
+  return run<StoredPainting[]>(PAINTINGS, 'readonly', (s) => s.getAll());
 }
 
 export function loadStoredPainting(id: string): Promise<StoredPainting | undefined> {
@@ -122,7 +179,26 @@ export async function listStoredPaintings(): Promise<StoredPaintingSummary[]> {
 }
 
 /** 그림과 그 그림을 칠하던 저장본을 지운다. 완성해서 작품집에 넣은 것은 남긴다. */
-export async function deleteStoredPainting(id: string): Promise<void> {
+export async function deleteStoredPainting(id: string, options?: WriteOptions): Promise<void> {
+  const hadProgress = (await loadProgress(id)) !== undefined;
   await run(PAINTINGS, 'readwrite', (s) => s.delete(id));
-  await run(PROGRESS, 'readwrite', (s) => s.delete(id));
+  await removed('painting', id, options);
+  if (hadProgress) await deleteProgress(id, options);
+}
+
+export function listTombstones(): Promise<Tombstone[]> {
+  return run<Tombstone[]>(TOMBSTONES, 'readonly', (s) => s.getAll());
+}
+
+/** 서버도 지운 것을 알게 되면 기록을 없앤다. */
+export async function forgetTombstone(kind: SyncKind, key: string): Promise<void> {
+  await run(TOMBSTONES, 'readwrite', (s) => s.delete(`${kind}:${key}`));
+}
+
+/**
+ * 이 브라우저에 저장한 그림을 모두 지운다 (칠하던 것, 작품집, 사진 그림, 지운 기록).
+ * 다른 사람이 같은 브라우저에서 로그인할 때, 앞 사람의 그림이 섞여 올라가지 않게 한다.
+ */
+export async function clearLocalPaintings(): Promise<void> {
+  for (const store of [PROGRESS, GALLERY, PAINTINGS, TOMBSTONES]) await run(store, 'readwrite', (s) => s.clear());
 }

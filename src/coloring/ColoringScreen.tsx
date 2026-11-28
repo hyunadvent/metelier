@@ -38,6 +38,9 @@ export function ColoringScreen({ paintingId, backdrop, onExit }: ColoringScreenP
   const filledRef = useRef(0);
   const saveTimer = useRef<number | null>(null);
   const onChangeRef = useRef<() => void>(() => {});
+  /** 연 뒤로 칠하거나 지운 것이 있는가. 없으면 저장하지 않는다: 아무것도 안 하고 나갈 때 빈 그림이
+   *  "새로 저장한 것" 이 되어, 다른 기기에서 칠한 것을 덮어쓰지 않게 한다. */
+  const dirtyRef = useRef(false);
 
   const [view, setView] = useState<ColoringView | null>(null);
   const [painting, setPainting] = useState<LoadedPainting | null>(null);
@@ -81,6 +84,7 @@ export function ColoringScreen({ paintingId, backdrop, onExit }: ColoringScreenP
 
     (async () => {
       try {
+        dirtyRef.current = false;
         const loaded = await loadPainting(paintingId);
         if (cancelled) return;
         const v = await ColoringView.create(host, loaded, {
@@ -127,12 +131,14 @@ export function ColoringScreen({ paintingId, backdrop, onExit }: ColoringScreenP
       window.clearTimeout(saveTimer.current);
       saveTimer.current = null;
     }
-    if (!view || !meta) return Promise.resolve();
+    if (!view || !meta || !dirtyRef.current) return Promise.resolve();
+    dirtyRef.current = false;
     return saveSession(view, meta, completedRef.current).catch((e) => console.warn('그림을 저장하지 못했습니다.', e));
   }, [view, meta]);
 
   useEffect(() => {
     onChangeRef.current = () => {
+      dirtyRef.current = true;
       if (saveTimer.current !== null) window.clearTimeout(saveTimer.current);
       saveTimer.current = window.setTimeout(() => void saveNow(), SAVE_DELAY_MS);
     };

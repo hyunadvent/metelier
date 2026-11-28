@@ -1,4 +1,5 @@
-import { createClient, type SupabaseClient, type User } from '@supabase/supabase-js';
+import type { SupabaseClient, User } from '@supabase/supabase-js';
+import { getSupabase } from './supabaseClient';
 
 /**
  * 로그인.
@@ -68,9 +69,8 @@ function returnUrl(): string {
   return location.origin + location.pathname;
 }
 
-function supabaseBackend(url: string, key: string): AuthBackend {
-  let client: SupabaseClient | null = null;
-  const get = () => (client ??= createClient(url, key, { auth: { flowType: 'pkce', detectSessionInUrl: true, persistSession: true } }));
+function supabaseBackend(client: SupabaseClient): AuthBackend {
+  const get = () => client;
   return {
     mode: 'supabase',
     async currentUser() {
@@ -141,13 +141,9 @@ function offBackend(): AuthBackend {
   };
 }
 
-export function createAuthBackend(env: { url?: string; key?: string; dev: boolean }): AuthBackend {
-  if (env.url && env.key) return supabaseBackend(env.url, env.key);
+export function createAuthBackend(env: { client: SupabaseClient | null; dev: boolean }): AuthBackend {
+  if (env.client) return supabaseBackend(env.client);
   return env.dev ? devBackend() : offBackend();
 }
 
-export const authBackend = createAuthBackend({
-  url: import.meta.env.VITE_SUPABASE_URL as string | undefined,
-  key: import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined,
-  dev: import.meta.env.DEV,
-});
+export const authBackend = createAuthBackend({ client: getSupabase(), dev: import.meta.env.DEV });

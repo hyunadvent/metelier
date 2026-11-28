@@ -293,3 +293,54 @@
   font-weight: 600;
   line-height: 1.5;
 }
+
+/* ── 저장 상태 ─────────────────────────────────── */
+
+.user-button--signed-in {
+  position: relative;
+}
+
+.user-button__sync {
+  position: absolute;
+  top: 3px;
+  left: 30px;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  border: 2px solid #fffaf2;
+}
+
+.user-button__sync--syncing {
+  background: #6fb7e9;
+  animation: sync-pulse 1s ease-in-out infinite alternate;
+}
+
+.user-button__sync--error {
+  background: #e0574c;
+}
+
+@keyframes sync-pulse {
+  from {
+    opacity: 0.4;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.user-menu__sync {
+  margin: 0;
+  padding: 2px 6px 6px;
+  border-bottom: 1px solid #ecd9c2;
+  color: #5f8f4f;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.user-menu__sync--syncing {
+  color: #3f85b8;
+}
+
+.user-menu__sync--error {
+  color: #c0453c;
+}

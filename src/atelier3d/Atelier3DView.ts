@@ -6,6 +6,7 @@ import {
   loadDecor,
   MAX_WALL_PICTURES,
   wallPictureSize,
+  type AtelierDecor,
   type FrameKind,
   type PlantKind,
   type PlantSlot,
@@ -204,6 +205,14 @@ export class Atelier3DView {
     this.resize();
     this.placeCamera(1);
     this.frame = requestAnimationFrame(this.onFrame);
+  }
+
+  /** 서버에서 받은 꾸밈을 화실에 다시 보여 준다 (화분과 그림 벽). */
+  applyDecor(decor: AtelierDecor): void {
+    for (const slot of Object.keys(decor.plants) as PlantSlot[]) this.room.setPlant(slot, decor.plants[slot]);
+    this.wall = decor.wall;
+    if (this.wallSelection && !this.wall.some((p) => p.id === this.wallSelection)) this.selectWallPicture(null);
+    void this.rebuildWall();
   }
 
   /** 꾸미기: 그 자리의 화분을 바꾼다. */

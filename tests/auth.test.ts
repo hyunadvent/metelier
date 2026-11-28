@@ -1,23 +1,23 @@
 import { describe, expect, it } from 'vitest';
+import { createClient } from '@supabase/supabase-js';
 import { createAuthBackend, LOGIN_PROVIDERS, toMetelierUser } from '../src/auth/auth';
 
 describe('로그인', () => {
   it('Supabase 설정이 있으면 Supabase 로, 없으면 개발 서버에서만 가짜 로그인을 쓴다', () => {
-    expect(createAuthBackend({ url: 'https://example.supabase.co', key: 'public-anon-key', dev: false }).mode).toBe('supabase');
-    expect(createAuthBackend({ dev: true }).mode).toBe('dev');
-    expect(createAuthBackend({ dev: false }).mode).toBe('off');
-    // 주소나 키 가운데 하나만 있으면 설정이 없는 것으로 본다
-    expect(createAuthBackend({ url: 'https://example.supabase.co', dev: false }).mode).toBe('off');
+    const client = createClient('https://example.supabase.co', 'public-anon-key', { auth: { persistSession: false } });
+    expect(createAuthBackend({ client, dev: false }).mode).toBe('supabase');
+    expect(createAuthBackend({ client: null, dev: true }).mode).toBe('dev');
+    expect(createAuthBackend({ client: null, dev: false }).mode).toBe('off');
   });
 
   it('설정이 없는 배포본에서는 로그인하지 못하고 그 까닭을 알려 준다', async () => {
-    const off = createAuthBackend({ dev: false });
+    const off = createAuthBackend({ client: null, dev: false });
     expect(await off.currentUser()).toBeNull();
     await expect(off.signIn('google')).rejects.toThrow('준비 중');
   });
 
   it('개발용 가짜 로그인은 로그인과 로그아웃을 알린다', async () => {
-    const dev = createAuthBackend({ dev: true });
+    const dev = createAuthBackend({ client: null, dev: true });
     const seen: (string | null)[] = [];
     const stop = dev.subscribe((user) => seen.push(user?.name ?? null));
     await dev.signIn('google');

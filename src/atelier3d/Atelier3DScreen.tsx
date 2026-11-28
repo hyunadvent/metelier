@@ -3,6 +3,7 @@ import { Atelier3DView } from './Atelier3DView';
 import { FRAME_INFO, FRAME_KINDS, loadDecor, MAX_WALL_PICTURES, PLANT_INFO, PLANT_KINDS, saveDecor, type PlantKind, type PlantSlot } from './decor';
 import { WallPicker } from './WallPicker';
 import { LoginNudge, UserButton } from '../auth/UserButton';
+import { onRemoteApplied } from '../storage/changes';
 import type { Activity } from './room';
 import { PaintingPicker } from '../photo/PaintingPicker';
 import { PhotoDialog } from '../photo/PhotoDialog';
@@ -134,6 +135,19 @@ export function Atelier3DScreen({ startSeated, onStartColoring }: Atelier3DScree
     viewRef.current?.removeWallPicture(wallSelected);
     setWallSelected(null);
   };
+
+  // 다른 기기에서 꾸민 것을 받아 오면 바로 바꿔 보여 준다
+  useEffect(
+    () =>
+      onRemoteApplied((kinds) => {
+        if (!kinds.has('decor')) return;
+        const next = loadDecor();
+        setDecor(next);
+        viewRef.current?.applyDecor(next);
+        setWallSelected((id) => (id && next.wall.some((p) => p.id === id) ? id : null));
+      }),
+    [],
+  );
 
   useEffect(() => {
     if (!toast) return;

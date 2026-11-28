@@ -1,3 +1,5 @@
+import { notifyLocalChange } from '../storage/changes';
+
 // 화실의 꾸민 상태. 방을 만드는 함수가 이 데이터를 읽어 그리므로,
 // 화실 화면과 색칠 화면 배경이 같은 꾸밈을 보여 준다 (R9).
 // 꾸미기 화면은 나중에 추가된다: 그때는 이 데이터를 바꿔 저장하기만 하면 된다.
@@ -161,6 +163,8 @@ function parseWall(raw: unknown): WallPicture[] {
   return wall;
 }
 const STORAGE_KEY = 'metelier.decor';
+/** 꾸밈을 마지막으로 바꾼 때 (동기화가 어느 쪽이 새것인지 가리는 데 쓴다). 한 번도 바꾸지 않았으면 없다. */
+const UPDATED_KEY = 'metelier.decor.updatedAt';
 
 function parsePicture(raw: unknown): PictureRef | null {
   if (typeof raw !== 'object' || raw === null) return null;
@@ -203,10 +207,36 @@ export function loadDecor(): AtelierDecor {
   }
 }
 
-export function saveDecor(decor: AtelierDecor): void {
+/**
+ * 꾸밈을 저장한다.
+ * @param fromSync 동기화가 서버에서 받아 쓰는 중이면 그때의 시각. 바뀌었다고 알리지 않는다.
+ */
+export function saveDecor(decor: AtelierDecor, fromSync?: { updatedAt: number }): void {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(decor));
+    localStorage.setItem(UPDATED_KEY, String(fromSync?.updatedAt ?? Date.now()));
   } catch {
     // 저장할 수 없는 환경이면 이번 접속 동안만 유지된다.
+  }
+  if (!fromSync) notifyLocalChange('decor', 'main');
+}
+
+/** 꾸밈을 마지막으로 바꾼 때. 한 번도 바꾸지 않았으면 0 */
+export function decorUpdatedAt(): number {
+  try {
+    const value = Number(localStorage.getItem(UPDATED_KEY));
+    return Number.isFinite(value) && value > 0 ? value : 0;
+  } catch {
+    return 0;
+  }
+}
+
+/** 꾸밈을 처음 상태로 되돌린다 (다른 사람이 같은 브라우저에서 로그인할 때). */
+export function resetDecor(): void {
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(UPDATED_KEY);
+  } catch {
+    // 지울 수 없으면 그대로 둔다.
   }
 }

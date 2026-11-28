@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
+import { describeSync, useSync } from '../sync/SyncContext';
 import { useAuth } from './AuthContext';
 
 /** 화실 오른쪽 위의 로그인 버튼. 로그인하면 이름과 사진을 보여 주고, 누르면 로그아웃 메뉴가 열린다. */
 export function UserButton() {
   const { user, loading, openLogin, signOut } = useAuth();
+  const { status, flush, retry } = useSync();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -28,27 +31,52 @@ export function UserButton() {
 
   return (
     <div className="user-menu" ref={ref}>
-      <button className="user-button user-button--signed-in" data-testid="user-button" aria-expanded={menuOpen} onClick={() => setMenuOpen((o) => !o)}>
+      <button
+        className="user-button user-button--signed-in"
+        data-testid="user-button"
+        data-sync={status?.state ?? 'none'}
+        aria-expanded={menuOpen}
+        onClick={() => setMenuOpen((o) => !o)}
+      >
         {user.avatarUrl ? (
           <img className="user-button__avatar" src={user.avatarUrl} alt="" referrerPolicy="no-referrer" />
         ) : (
           <span className="user-button__avatar user-button__avatar--initial">{user.name.slice(0, 1)}</span>
         )}
         <span className="user-button__name">{user.name}</span>
+        {status && status.state !== 'idle' && <span className={`user-button__sync user-button__sync--${status.state}`} aria-hidden="true" />}
       </button>
       {menuOpen && (
         <div className="user-menu__panel" role="menu">
           {user.email && <p className="user-menu__email">{user.email}</p>}
+          {status && (
+            <p className={`user-menu__sync user-menu__sync--${status.state}`} data-testid="sync-status">
+              {describeSync(status)}
+            </p>
+          )}
+          {status?.state === 'error' && (
+            <button className="user-menu__item" role="menuitem" onClick={retry}>
+              다시 저장하기
+            </button>
+          )}
           <button
             className="user-menu__item"
             role="menuitem"
             data-testid="logout"
-            onClick={() => {
-              setMenuOpen(false);
-              void signOut();
+            disabled={signingOut}
+            onClick={async () => {
+              // 기다리던 것을 먼저 올리고 로그아웃한다
+              setSigningOut(true);
+              try {
+                await flush();
+              } finally {
+                setSigningOut(false);
+                setMenuOpen(false);
+                await signOut();
+              }
             }}
           >
-            로그아웃
+            {signingOut ? '저장하고 로그아웃하는 중…' : '로그아웃'}
           </button>
         </div>
       )}
