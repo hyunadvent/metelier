@@ -307,3 +307,27 @@
 .painting-picker__open:disabled span {
   color: #a08a78;
 }
+
+/* 등록할 그림의 제목 */
+.photo-dialog__name {
+  display: grid;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #5b4636;
+}
+
+.photo-dialog__name input {
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 2px solid #ecd9c2;
+  background: #fff;
+  color: #4a382b;
+  font-family: inherit;
+  font-size: 16px;
+}
+
+.photo-dialog__name input:focus {
+  outline: none;
+  border-color: #f4a24c;
+}

@@ -33,6 +33,9 @@ interface PhotoDialogProps {
   onSaved(title: string): void;
 }
 
+/** 그림 제목의 최대 길이 */
+const MAX_TITLE = 30;
+
 /** 화실의 카메라를 눌렀을 때 열리는 창: 사진을 골라 색칠 그림으로 바꾼다. */
 export function PhotoDialog({ onClose, onSaved }: PhotoDialogProps) {
   const [photo, setPhoto] = useState<Photo | null>(null);
@@ -41,6 +44,8 @@ export function PhotoDialog({ onClose, onSaved }: PhotoDialogProps) {
   const [result, setResult] = useState<StoredPainting | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  /** 등록할 그림의 제목. 사진을 고르면 파일 이름으로 채워 두고, 바꿀 수 있다. */
+  const [title, setTitle] = useState('');
   const { user, loading, openLogin } = useAuth();
   /** 로그인하지 않은 채 등록하려 할 때: 로그인을 권하는 중 */
   const [askLogin, setAskLogin] = useState(false);
@@ -52,7 +57,9 @@ export function PhotoDialog({ onClose, onSaved }: PhotoDialogProps) {
     setResult(null);
     setStage('read');
     try {
-      setPhoto(await readPhoto(file));
+      const read = await readPhoto(file);
+      setPhoto(read);
+      setTitle(titleFromFileName(read.name));
     } catch {
       setStage(null);
       setError('사진을 읽지 못했습니다. JPG, PNG, WebP 사진인지 확인해 주세요.');
@@ -100,8 +107,10 @@ export function PhotoDialog({ onClose, onSaved }: PhotoDialogProps) {
     }
     setSaving(true);
     try {
-      await storePhotoPainting(result);
-      onSaved(result.title);
+      const name = title.trim().slice(0, MAX_TITLE) || result.title;
+      const named: StoredPainting = { ...result, title: name, meta: { ...(result.meta as PaintingMeta), title: name } };
+      await storePhotoPainting(named);
+      onSaved(name);
       if (andLogin) openLogin('로그인하면 등록한 그림이 저장돼 다른 기기에서도 칠할 수 있어요.');
     } catch {
       setSaving(false);
@@ -152,6 +161,18 @@ export function PhotoDialog({ onClose, onSaved }: PhotoDialogProps) {
             <p className="photo-dialog__count" data-testid="photo-count">
               칸 {meta.regions.length}개 · 물감 {meta.palette.length}색
             </p>
+            <label className="photo-dialog__name">
+              <span>그림 제목</span>
+              <input
+                type="text"
+                value={title}
+                maxLength={MAX_TITLE}
+                placeholder={result.title}
+                disabled={saving}
+                data-testid="photo-title"
+                onChange={(e) => setTitle(e.target.value)}
+              />
+            </label>
           </>
         )}
 

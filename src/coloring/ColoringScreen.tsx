@@ -8,6 +8,7 @@ import { BUILTIN_PAINTINGS } from './builtinPaintings';
 import { loadDecor } from '../atelier3d/decor';
 import { listStoredPaintings, type StoredPaintingSummary } from '../storage/db';
 import { useHintsDone } from '../app/useHintsDone';
+import { useAuth } from '../auth/AuthContext';
 import { brushScale, onPaintBuff, paintBuffLeft } from '../app/paintBuff';
 import { CompleteDialog, ConfirmDialog, GalleryDialog } from './dialogs';
 import { hexToRgb, isCustomTool, loadPainting, type LoadedPainting, type PaintingMeta, type Tool } from './painting';
@@ -81,6 +82,7 @@ export function ColoringScreen({ paintingId, backdrop, onExit, onSwitchPainting,
       }),
     [],
   );
+  const loggedIn = useAuth().user !== null;
   /** 뒤로 가기를 두 번째 눌렀을 때 화실로 갈지 묻는 창 */
   const [askExit, setAskExit] = useState(false);
   const firstBack = useRef<number | null>(null);
@@ -562,6 +564,8 @@ export function ColoringScreen({ paintingId, backdrop, onExit, onSwitchPainting,
               }}
               onClose={() => setChoices(null)}
               onChange={setChoices}
+              // 로그인하지 않았으면 고를 수 있는 그림만, 로그인했으면 벽에 걸린 그림도 (고를 수는 없게) 보여 준다
+              hideHung={!loggedIn}
             />
           )}
           {dialog === 'reset' && (

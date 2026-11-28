@@ -14,12 +14,16 @@ interface PaintingPickerProps {
   onClose(): void;
   /** 그림을 지운 뒤 남은 목록을 알려 준다 */
   onChange(photos: StoredPaintingSummary[]): void;
+  /** 참이면 벽에 걸린 그림은 아예 보여 주지 않는다 (고를 수 있는 그림만) */
+  hideHung?: boolean;
 }
 
 const HUNG_HINT = '그림 벽에 걸린 그림이에요. 다시 칠하려면 벽에서 치워 주세요.';
 
 /** 이젤을 눌렀을 때, 칠할 수 있는 그림이 여러 장이면 열리는 창. */
-export function PaintingPicker({ builtins, photos, hung, onPick, onClose, onChange }: PaintingPickerProps) {
+export function PaintingPicker({ builtins, photos: allPhotos, hung, onPick, onClose, onChange, hideHung = false }: PaintingPickerProps) {
+  const shown = (id: string) => !hideHung || !hung.has(id);
+  const photos = allPhotos.filter((p) => shown(p.id));
   /** 지울지 한 번 더 묻는 중인 그림 */
   const [asking, setAsking] = useState<string | null>(null);
 
@@ -30,7 +34,7 @@ export function PaintingPicker({ builtins, photos, hung, onPick, onClose, onChan
     }
     await deleteStoredPainting(id);
     setAsking(null);
-    onChange(photos.filter((p) => p.id !== id));
+    onChange(allPhotos.filter((p) => p.id !== id));
   };
 
   return (
@@ -41,7 +45,7 @@ export function PaintingPicker({ builtins, photos, hung, onPick, onClose, onChan
         </button>
         <h2 className="photo-dialog__title">🎨 어떤 그림을 칠할까요?</h2>
         <ul className="painting-picker__list">
-          {builtins.map((b) => (
+          {builtins.filter((b) => shown(b.id)).map((b) => (
             <li key={b.id} className="painting-picker__item">
               <button
                 className="painting-picker__open"
@@ -73,7 +77,7 @@ export function PaintingPicker({ builtins, photos, hung, onPick, onClose, onChan
             </li>
           ))}
         </ul>
-        {hung.size > 0 && <p className="photo-dialog__count">벽에 걸린 그림은 벽에서 치우면 다시 칠할 수 있어요</p>}
+        {hung.size > 0 && !hideHung && <p className="photo-dialog__count">벽에 걸린 그림은 벽에서 치우면 다시 칠할 수 있어요</p>}
         <p className="photo-dialog__count">문 옆의 카메라를 누르면 사진으로 새 그림을 만들 수 있어요</p>
       </div>
     </div>
