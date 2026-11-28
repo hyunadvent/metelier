@@ -23,7 +23,7 @@ interface Atelier3DScreenProps {
 
 const HINTS: Record<Activity | 'none', string> = {
   none: '바닥을 누르거나 WASD로 걷기 · 캐릭터나 스페이스로 점프 · 끌어서 둘러보기',
-  paint: '이젤을 눌러 색칠을 시작하세요',
+  paint: '이젤을 눌러 색칠할 그림을 고르세요',
   tea: '창밖을 보며 차를 마시고 있어요 · 바닥을 누르면 일어나요',
   read: '책을 읽고 있어요 · 바닥을 누르면 일어나요',
 };
@@ -45,6 +45,8 @@ export function Atelier3DScreen({ startSeated, onStartColoring }: Atelier3DScree
   /** 그림 벽에서 고른 그림 (옮기거나 치우는 중) */
   const [wallSelected, setWallSelected] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  /** 이젤 캔버스에 올라 있는 그림 (누르면 이어서 칠한다) */
+  const [easelPainting, setEaselPainting] = useState<string | null>(null);
   const { status: syncStatus } = useSync();
   /** 다른 기기에서 꾸민 것과 작품을 받아 오는 중 */
   const loadingSaved = syncStatus?.state === 'syncing' && (syncStatus.downloading ?? 0) > 0;
@@ -70,6 +72,8 @@ export function Atelier3DScreen({ startSeated, onStartColoring }: Atelier3DScree
               .catch(() => [])
               .then(setChoices);
           },
+          onContinuePainting: (id) => startRef.current(id),
+          onEaselPicture: setEaselPainting,
           onCamera: () => setPhotoOpen(true),
           onGalleryWall: () => setWallPickerOpen(true),
           onWallPictureSelect: setWallSelected,
@@ -178,7 +182,11 @@ export function Atelier3DScreen({ startSeated, onStartColoring }: Atelier3DScree
       {error && <p className="atelier__message">{error}</p>}
       {!error && !wallSelected && (
         <p className="atelier__hint">
-          {HINTS[activity ?? 'none']}
+          {easelPainting && (activity === 'paint' || activity === null)
+            ? activity === 'paint'
+              ? '캔버스를 누르면 이어서 칠해요 · 이젤 표시로 다른 그림 고르기'
+              : `${HINTS.none} · 캔버스를 누르면 이어서 칠해요`
+            : HINTS[activity ?? 'none']}
         </p>
       )}
       {wallSelected && (

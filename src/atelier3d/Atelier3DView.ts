@@ -82,6 +82,10 @@ export interface Atelier3DEvents {
   onActivityChange(activity: Activity | null): void;
   /** 의자에 앉은 채로 이젤을 눌렀을 때 */
   onEasel(): void;
+  /** 이젤 캔버스에 올라 있는 그림을 눌렀을 때: 의자에 앉은 뒤 그 그림을 이어서 칠한다 */
+  onContinuePainting(paintingId: string): void;
+  /** 이젤 캔버스에 올라 있는 그림이 바뀌었을 때 (없으면 null) */
+  onEaselPicture(paintingId: string | null): void;
   /** 걸이대의 카메라를 눌렀을 때 */
   onCamera(): void;
   /** 그림 벽의 표시를 눌렀을 때 */
@@ -145,6 +149,8 @@ export class Atelier3DView {
   private easelTexture: THREE.Texture | null = null;
   /** 이젤 그림을 마지막으로 부탁한 차례 (늦게 끝난 옛 요청이 새 그림을 덮지 않게) */
   private easelRequest = 0;
+  /** 지금 이젤 캔버스에 올라 있는 그림 */
+  private easelPaintingId: string | null = null;
   /** 그림자를 다시 그려야 하는가 (캐릭터가 움직이거나 방의 물건이 바뀌었을 때만 그린다) */
   private shadowDirty = true;
   /** 그림자를 마지막으로 그린 뒤 지난 시간 (초) */
@@ -272,6 +278,8 @@ export class Atelier3DView {
     this.shadowDirty = true;
     this.easelTexture?.dispose();
     this.easelTexture = picture?.texture ?? null;
+    this.easelPaintingId = picture?.paintingId ?? null;
+    this.events.onEaselPicture(this.easelPaintingId);
   }
 
   /** 그림 벽 쪽으로 걸어가서 벽을 바라본다. */
@@ -373,6 +381,26 @@ export class Atelier3DView {
     return { x: ((clientX - rect.left) / rect.width) * 2 - 1, y: -((clientY - rect.top) / rect.height) * 2 + 1 };
   }
 
+  /**
+   * 의자에 앉아(앉아 있지 않으면 걸어가서) 색칠을 시작한다.
+   * @param continueId 이어서 칠할 그림. null 이면 그림을 고른다.
+   */
+  private openEasel(continueId: string | null): void {
+    const start = () => (continueId ? this.events.onContinuePainting(continueId) : this.events.onEasel());
+    if (this.activity === 'paint') start();
+    else this.goSit('paint', start);
+  }
+
+  /** 화면의 한 점이 이젤의 캔버스 위인가 (캐릭터에 가려진 곳은 빼고) */
+  private isBoardAt(clientX: number, clientY: number): boolean {
+    const ndc = this.toNdc(clientX, clientY);
+    this.raycaster.setFromCamera(new THREE.Vector2(ndc.x, ndc.y), this.camera);
+    const board = this.raycaster.intersectObject(this.room.board, true)[0];
+    if (!board) return false;
+    const body = this.raycaster.intersectObject(this.character.group, true)[0];
+    return !body || board.distance < body.distance;
+  }
+
   /** 화면의 한 점 아래에 있는 벽 그림 */
   private wallPictureUnder(clientX: number, clientY: number): string | null {
     const ndc = this.toNdc(clientX, clientY);
@@ -460,8 +488,7 @@ export class Atelier3DView {
     switch (hotspot.id) {
       case 'easel':
         // 의자에 앉아 있으면 바로, 아니면 의자로 가서 앉은 뒤 색칠을 시작한다.
-        if (this.activity === 'paint') this.events.onEasel();
-        else this.goSit('paint', () => this.events.onEasel());
+        this.openEasel(null);
         break;
       case 'stool':
         this.goSit('paint');
@@ -605,6 +632,11 @@ export class Atelier3DView {
     this.drag = null;
     if (d.moved) return;
     // 캐릭터를 누르면 점프한다 (키보드가 없는 터치 기기에서 뛰는 방법).
+    // 이젤 캔버스를 누르면: 올라 있는 그림을 이어서 칠하고, 비어 있으면 그림을 고른다
+    if (this.isBoardAt(e.clientX, e.clientY)) {
+      this.openEasel(this.easelPaintingId);
+      return;
+    }
     if (this.isCharacterAt(e.clientX, e.clientY)) {
       this.tryJump();
       return;
