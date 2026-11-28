@@ -647,6 +647,9 @@ export function buildAtelierRoom(decor: AtelierDecor = DEFAULT_DECOR): AtelierRo
   contact(-3.5, 1.85, 1.05, 0.85);
 
   // ── 이젤 ───────────────────────────────────────
+  /** 젖혀진 부분 안에서 캔버스 판의 앞뒤 자리와 아래 끝 (선반 턱 위) */
+  const BOARD_Z = 0.13;
+  const BOARD_BOTTOM = 0.07;
   const easel = addGroup(EASEL.x, 0, EASEL.z, group);
   easel.rotation.y = EASEL.turn;
   for (const x of [-0.42, 0.42]) {
@@ -656,12 +659,14 @@ export function buildAtelierRoom(decor: AtelierDecor = DEFAULT_DECOR): AtelierRo
   box(0.07, 1.95, 0.06, WOOD_DARK, 0, 0.95, -0.44, easel, 0.015).rotation.x = 0.28;
   box(0.86, 0.06, 0.05, WOOD_DARK, 0, 0.42, 0.09, easel);
   // 뒤로 살짝 젖혀진 부분: 받침 선반, 기둥, 캔버스 판
+  // 캔버스 판은 다리보다 앞에 둔다: 다리보다 더 젖혀져 있어 뒤에 두면 위쪽이 다리에 가린다.
+  // 판의 아래는 선반 턱보다, 위는 고정쇠보다 떨어뜨려 판의 앞면이 아무것에도 가리지 않게 한다.
   const tilt = addGroup(0, 0.88, 0.1, easel);
   tilt.rotation.x = -0.13;
-  box(1.4, 0.06, 0.17, WOOD, 0, 0, 0.05, tilt, 0.02);
-  box(1.4, 0.035, 0.03, WOOD_DARK, 0, 0.045, 0.12, tilt);
+  box(1.4, 0.06, 0.24, WOOD, 0, 0, 0.08, tilt, 0.02);
+  box(1.4, 0.035, 0.03, WOOD_DARK, 0, 0.045, 0.185, tilt);
   box(0.09, 1.4, 0.05, WOOD_DARK, 0, 0.64, -0.04, tilt);
-  const clamp = box(0.34, 0.1, 0.1, WOOD, 0, 0, 0.02, tilt, 0.02);
+  const clamp = box(0.34, 0.1, 0.1, WOOD, 0, 0, BOARD_Z - 0.03, tilt, 0.02);
   const board = add(new THREE.BoxGeometry(1, 1, 0.035), mat(0xfffdf8, { roughness: 1 }), tilt);
   const setBoardAspect = (aspect: number) => {
     let h = BOARD_HEIGHT;
@@ -671,8 +676,8 @@ export function buildAtelierRoom(decor: AtelierDecor = DEFAULT_DECOR): AtelierRo
       h = w / aspect;
     }
     board.scale.set(w, h, 1);
-    board.position.set(0, 0.03 + h / 2, 0.03);
-    clamp.position.y = 0.03 + h + 0.05;
+    board.position.set(0, BOARD_BOTTOM + h / 2, BOARD_Z);
+    clamp.position.y = BOARD_BOTTOM + h + 0.05;
   };
   setBoardAspect(4 / 3);
   // 캔버스 앞면에 붙이는 그림. 판의 크기를 따라가도록 판에 붙인다 (판의 앞면은 +z).
